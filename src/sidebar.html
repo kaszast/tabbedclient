@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabbedClient Fülek</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <style>
+    body, body.theme-slate {
+      --bg-window: #0f1115;
+      --bg-sidebar: #16181d;
+      --bg-sidebar-hover: #21252d;
+      --bg-tab-active: #262a34;
+      --border-color: #282c35;
+      --text-main: #f0f3f6;
+      --text-muted: #8c95a0;
+      --accent: #448cf8;
+      --accent-text: #ffffff;
+      --badge-bg: #e0453e;
+      --badge-text: #ffffff;
+      --radius: 8px;
+    }
+    body.theme-nordic {
+      --bg-window: #ffffff;
+      --bg-sidebar: #f4f5f7;
+      --bg-sidebar-hover: #e9ebef;
+      --bg-tab-active: #e2e8f0;
+      --border-color: #d8dce3;
+      --text-main: #1e2430;
+      --text-muted: #647082;
+      --accent: #2563eb;
+      --accent-text: #ffffff;
+      --badge-bg: #dc2626;
+      --badge-text: #ffffff;
+      --radius: 6px;
+    }
+    body.theme-jetbrains {
+      --bg-window: #1e1f22;
+      --bg-sidebar: #2b2d30;
+      --bg-sidebar-hover: #35373c;
+      --bg-tab-active: #3e4147;
+      --border-color: #393b40;
+      --text-main: #dfe1e5;
+      --text-muted: #7c8088;
+      --accent: #3574f0;
+      --accent-text: #ffffff;
+      --badge-bg: #e55757;
+      --badge-text: #ffffff;
+      --radius: 4px;
+    }
+    body.theme-solarized {
+      --bg-window: #fdf6e3;
+      --bg-sidebar: #eee8d5;
+      --bg-sidebar-hover: #e4dcbe;
+      --bg-tab-active: #dcd4b8;
+      --border-color: #d3c8ab;
+      --text-main: #073642;
+      --text-muted: #657b83;
+      --accent: #268bd2;
+      --accent-text: #fdf6e3;
+      --badge-bg: #dc322f;
+      --badge-text: #ffffff;
+      --radius: 6px;
+    }
+    body.theme-enterprise {
+      --bg-window: #ffffff;
+      --bg-sidebar: #f0f2f5;
+      --bg-sidebar-hover: #e4e7eb;
+      --bg-tab-active: #0969da;
+      --border-color: #d0d7de;
+      --text-main: #24292f;
+      --text-muted: #57606a;
+      --accent: #0969da;
+      --accent-text: #ffffff;
+      --badge-bg: #cf222e;
+      --badge-text: #ffffff;
+      --radius: 6px;
+    }
+    body {
+      background-color: var(--bg-sidebar);
+      color: var(--text-main);
+      height: 100vh;
+      width: 100vw;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #sidebar-container.sidebar,
+    #sidebar-container.sidebar.collapsed {
+      width: 100% !important;
+      max-width: 100% !important;
+      height: 100vh !important;
+      border-right: 1px solid var(--border-color);
+      transition: none !important;
+    }
+    .tab-favicon {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      border-radius: 4px;
+      display: block;
+    }
+  </style>
+</head>
+<body class="theme-slate desktop-sidebar-view">
+
+  <aside class="sidebar" id="sidebar-container">
+    
+    <!-- Fejléc és Összecsukó gomb -->
+    <div class="sidebar-header">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="app-logo-badge" style="width:16px;height:16px;border-radius:3px;background:var(--accent);color:var(--accent-text);display:flex;align-items:center;justify-content:center;">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <rect x="2" y="2" width="7" height="20" rx="2" fill="currentColor" opacity="0.9"/>
+            <rect x="11" y="2" width="11" height="12" rx="2" fill="currentColor"/>
+            <rect x="11" y="16" width="11" height="6" rx="2" fill="currentColor" opacity="0.7"/>
+          </svg>
+        </span>
+        <span class="sidebar-title">Fülek</span>
+      </div>
+      <button id="btn-toggle-collapse" class="btn-icon" title="Fülsáv összecsukása / kinyitása">
+        <svg id="collapse-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+      </button>
+    </div>
+
+    <!-- Fülek Listája -->
+    <div id="tabs-list" class="tabs-list">
+      <!-- Kezdőlap Fül Mindig Elérhető -->
+      <div class="tab-item active" id="tab-btn-home" data-tab-id="home" title="Kezdőlap és Áttekintés">
+        <div class="tab-item-content">
+          <div class="tab-icon-box" style="color: var(--accent);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          </div>
+          <div class="tab-text-group">
+            <div class="tab-label">Kezdőlap</div>
+            <span class="tab-profile">Áttekintés</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dinamikus Fülek Konténer -->
+      <div id="dynamic-tabs"></div>
+
+      <!-- Új fül gomb -->
+      <button id="btn-add-tab" class="btn-add-tab" title="Új szolgáltatás felvétele">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+        <span class="add-tab-text">+ Új szolgáltatás</span>
+      </button>
+    </div>
+
+    <!-- Alsó sáv: Témaváltó és Beállítások -->
+    <div class="sidebar-footer">
+      <button id="btn-cycle-theme" class="btn-icon" title="Gyors témaváltás (5 stílus)">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+      </button>
+      <div class="footer-text" style="font-size: 11px; color: var(--text-muted); cursor: pointer;" id="theme-name-display" title="Kattints a témaváltáshoz">
+        01. Slate
+      </div>
+      <button id="btn-open-settings" class="btn-icon" title="Témák és Beállítások">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+      </button>
+    </div>
+
+  </aside>
+
+  <script>
+    const cfg = window.TabbedConfig || {};
+    const THEME_KEYS = (cfg.THEMES && typeof cfg.THEMES === 'object') ? Object.keys(cfg.THEMES) : ['slate', 'nordic', 'jetbrains', 'solarized', 'enterprise'];
+    const THEME_NAMES = (cfg.THEMES && typeof cfg.THEMES === 'object')
+      ? Object.fromEntries(Object.entries(cfg.THEMES).map(([k, v]) => [k, v.name]))
+      : {
+          slate: '01. Slate',
+          nordic: '02. Nordic',
+          jetbrains: '03. JetBrains',
+          solarized: '08. Solarized',
+          enterprise: '10. Enterprise'
+        };
+    const PROFILE_LABELS = {
+      work: 'Munkahelyi',
+      personal: 'Magán',
+      default: 'Alapértelmezett'
+    };
+
+    let currentTheme = 'slate';
+    let isCollapsed = false;
+    let activeTabId = 'home';
+    let userTabs = [];
+
+    const ICONS_MAP = Object.assign({
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>',
+      whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981z"/></svg>',
+      slack: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 15a2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2h2v2zm1 0a2 2 0 0 1 2-2 2 2 0 0 1 2 2v5a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-5zm2-7a2 2 0 0 1-2-2 2 2 0 0 1 2-2 2 2 0 0 1 2 2v2H9zm0 1a2 2 0 0 1 2 2 2 2 0 0 1-2 2H4a2 2 0 0 1-2-2 2 2 0 0 1 2-2h5zm7 2a2 2 0 0 1 2-2 2 2 0 0 1 2 2 2 2 0 0 1-2 2h-2v-2zm-1 0a2 2 0 0 1-2 2 2 2 0 0 1-2-2V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v5zm-2 7a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2h2zm0-1a2 2 0 0 1-2-2 2 2 0 0 1 2-2h5a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-5z"/></svg>',
+      telegram: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>',
+      gmail: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.5l8.073-6.007c1.618-1.214 3.927-.059 3.927 1.964z"/></svg>',
+      discord: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/></svg>',
+      trello: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.5 2h-15A2.5 2.5 0 0 0 2 4.5v15A2.5 2.5 0 0 0 4.5 22h15a2.5 2.5 0 0 0 2.5-2.5v-15A2.5 2.5 0 0 0 19.5 2zm-8.5 13.5a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v9zm8-4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5z"/></svg>',
+      calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+      notion: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.176.887c-.56.046-.748.373-.748.934zm13.682.98c.093.374 0 .748-.374.794l-.84.14v10.125c-.467.28-.98.42-1.4.42-.7 0-.933-.233-1.494-.933l-5.32-8.35v7.886l1.4.327c.374.093.42.42.374.747l-3.36.187c-.093-.374 0-.748.374-.794l.98-.234V8.502l-1.307-.14c-.373-.047-.42-.42-.373-.747l3.454-.233 5.46 8.397V8.128l-1.213-.14c-.374-.047-.42-.42-.374-.747z"/></svg>',
+      teams: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.625 8.5h-3.75V6.25a2.25 2.25 0 0 0-2.25-2.25h-6.25A2.25 2.25 0 0 0 6.125 6.25v11.5A2.25 2.25 0 0 0 8.375 20h6.25a2.25 2.25 0 0 0 2.25-2.25V15.5h3.75a1.5 1.5 0 0 0 1.5-1.5v-4a1.5 1.5 0 0 0-1.5-1.5z"/></svg>',
+      mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>',
+      globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z"></path></svg>'
+    }, (cfg.ICONS && typeof cfg.ICONS === 'object') ? cfg.ICONS : {});
+
+    function getFaviconFallbackUrl(rawUrl) {
+      const m = String(rawUrl || '').match(/^(https?:\/\/[^/]+)/i);
+      return m ? (m[1] + '/favicon.ico') : '';
+    }
+
+    function init() {
+      const homeBtn = document.getElementById('tab-btn-home');
+      homeBtn.onclick = () => {
+        setActiveTabHighlight('home');
+        sendMsg({ type: 'SWITCH_TAB', id: 'home', tabId: 'home', view: 'dashboard' });
+      };
+      homeBtn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sendMsg({ type: 'SHOW_CONTEXT_MENU', id: activeTabId, tabId: activeTabId });
+      });
+
+      const sidebarContainer = document.getElementById('sidebar-container');
+      sidebarContainer.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const item = e.target && e.target.closest ? e.target.closest('.tab-item') : null;
+        const targetId = (item && item.dataset && item.dataset.tabId) ? item.dataset.tabId : activeTabId;
+        sendMsg({ type: 'SHOW_CONTEXT_MENU', id: targetId, tabId: targetId });
+      });
+
+      document.getElementById('btn-toggle-collapse').onclick = () => {
+        applyCollapse(!isCollapsed, true);
+      };
+
+      document.getElementById('btn-cycle-theme').onclick = cycleTheme;
+      document.getElementById('theme-name-display').onclick = cycleTheme;
+
+      document.getElementById('btn-open-settings').onclick = () => {
+        sendMsg({ type: 'OPEN_SETTINGS' });
+      };
+
+      document.getElementById('btn-add-tab').onclick = () => {
+        sendMsg({ type: 'OPEN_ADD_TAB' });
+      };
+
+      sendMsg({ type: 'SIDEBAR_READY' });
+    }
+
+    function applyTheme(theme, notifyBackend = false) {
+      if (!THEME_KEYS.includes(theme)) theme = 'slate';
+      THEME_KEYS.forEach(t => document.body.classList.remove('theme-' + t));
+      document.body.classList.add('theme-' + theme);
+      currentTheme = theme;
+      document.getElementById('theme-name-display').textContent = THEME_NAMES[theme] || theme;
+      if (notifyBackend) {
+        sendMsg({ type: 'SET_THEME', theme: currentTheme });
+      }
+    }
+
+    function cycleTheme() {
+      const idx = THEME_KEYS.indexOf(currentTheme);
+      const next = THEME_KEYS[(idx + 1) % THEME_KEYS.length];
+      applyTheme(next, true);
+    }
+
+    function applyCollapse(collapsed, notifyBackend = false) {
+      isCollapsed = Boolean(collapsed);
+      const sidebarEl = document.getElementById('sidebar-container');
+      const icon = document.getElementById('collapse-icon');
+      if (isCollapsed) {
+        sidebarEl.classList.add('collapsed');
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path>';
+      } else {
+        sidebarEl.classList.remove('collapsed');
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path>';
+      }
+      if (notifyBackend) {
+        sendMsg({ type: 'SET_COLLAPSED', collapsed: isCollapsed });
+      }
+    }
+
+    function setActiveTabHighlight(tabId) {
+      activeTabId = tabId || 'home';
+      document.querySelectorAll('.tab-item').forEach(el => {
+        if (el.dataset.tabId === activeTabId) el.classList.add('active');
+        else el.classList.remove('active');
+      });
+    }
+
+    function detectIcon(title, url, explicitIcon) {
+      if (explicitIcon && ICONS_MAP[explicitIcon]) return explicitIcon;
+      const combined = `${title || ''} ${url || ''}`.toLowerCase();
+      if (combined.includes('gmail') || combined.includes('mail.google')) return 'gmail';
+      if (combined.includes('calendar')) return 'calendar';
+      if (combined.includes('slack')) return 'slack';
+      if (combined.includes('teams')) return 'teams';
+      if (combined.includes('telegram')) return 'telegram';
+      if (combined.includes('discord')) return 'discord';
+      if (combined.includes('whatsapp')) return 'whatsapp';
+      if (combined.includes('notion')) return 'notion';
+      if (combined.includes('trello')) return 'trello';
+      if (combined.includes('mail')) return 'mail';
+      return 'globe';
+    }
+
+    function renderTabs() {
+      const container = document.getElementById('dynamic-tabs');
+      container.innerHTML = '';
+
+      userTabs.forEach(tab => {
+        const tabTitle = tab.title || tab.name || 'Szolgáltatás';
+        const tabProfile = tab.profile || tab.profileId || 'default';
+        const el = document.createElement('div');
+        el.className = `tab-item ${tab.id === activeTabId ? 'active' : ''}`;
+        el.dataset.tabId = tab.id;
+        const profName = PROFILE_LABELS[tabProfile] || tabProfile;
+        const isMuted = tab.notificationsEnabled === false;
+        el.title = `${tabTitle} (${profName})${isMuted ? ' [Némítva]' : ''} — Jobb klikk a műveletekhez`;
+
+        const iconKey = detectIcon(tabTitle, tab.url, tab.icon);
+        const iconSvg = ICONS_MAP[iconKey] || ICONS_MAP.globe;
+        el.innerHTML = `
+          <div class="tab-item-content">
+            <div class="tab-icon-box" style="color: ${tab.iconColor || 'inherit'}">
+              ${iconSvg}
+            </div>
+            <div class="tab-text-group">
+              <div class="tab-label"></div>
+              <span class="tab-profile"></span>
+            </div>
+          </div>
+          ${tab.unreadCount > 0 ? `<span class="tab-badge">${tab.unreadCount}</span>` : (isMuted ? `<span class="tab-badge muted" title="Értesítések némítva" style="background:var(--border-color);color:var(--text-muted);font-size:9px;padding:1px 4px;">🔕</span>` : '')}
+        `;
+
+        // Nem listázott (egyéni) szolgáltatásnál az oldal saját ikonjának (favicon) megjelenítése
+        if (iconKey === 'globe') {
+          const faviconSrc = tab.favicon || tab.faviconUrl || getFaviconFallbackUrl(tab.url);
+          const iconBox = el.querySelector('.tab-icon-box');
+          if (faviconSrc && iconBox) {
+            const img = document.createElement('img');
+            img.className = 'tab-favicon';
+            img.alt = '';
+            img.src = faviconSrc;
+            img.onerror = () => {
+              iconBox.innerHTML = ICONS_MAP.globe;
+            };
+            iconBox.innerHTML = '';
+            iconBox.appendChild(img);
+          }
+        }
+
+        el.querySelector('.tab-label').textContent = tabTitle;
+        el.querySelector('.tab-profile').textContent = profName;
+
+        el.addEventListener('click', () => {
+          setActiveTabHighlight(tab.id);
+          sendMsg({
+            type: 'SWITCH_TAB',
+            id: tab.id,
+            tabId: tab.id,
+            url: tab.url,
+            profile: tabProfile,
+            profileId: tabProfile
+          });
+        });
+
+        el.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          sendMsg({
+            type: 'SHOW_CONTEXT_MENU',
+            id: tab.id,
+            tabId: tab.id
+          });
+        });
+
+        container.appendChild(el);
+      });
+
+      setActiveTabHighlight(activeTabId);
+    }
+
+    // Backend által meghívott szinkronizáló metódusok
+    window.syncFromBackend = function(state) {
+      if (!state) return;
+      const theme = state.theme || (state.settings && state.settings.theme) || 'slate';
+      const collapsed = ('sidebarCollapsed' in state)
+        ? state.sidebarCollapsed
+        : (state.settings && state.settings.sidebarCollapsed);
+      applyTheme(theme, false);
+      applyCollapse(Boolean(collapsed), false);
+
+      if (Array.isArray(state.tabs)) {
+        userTabs = state.tabs;
+      }
+      if ('activeTabId' in state) {
+        activeTabId = state.activeTabId || 'home';
+      }
+      renderTabs();
+    };
+
+    window.applyThemeFromBackend = function(theme) {
+      applyTheme(theme, false);
+    };
+
+    function sendMsg(payload) {
+      const handlers = window.webkit && window.webkit.messageHandlers;
+      if (!handlers) return;
+      const handler = handlers.tabbedclient || handlers.tabbedClient;
+      if (handler) {
+        handler.postMessage(JSON.stringify(payload));
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

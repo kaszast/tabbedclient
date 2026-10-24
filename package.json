@@ -1,0 +1,19 @@
+{
+  "name": "tabbetclient",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "node tests/test_tabs.js && node tests/test_themes.js",
+    "start": "python3 desktop/tabbedclient.py",
+    "start:linux": "python3 desktop/tabbedclient.py",
+    "build:packages": "python3 scripts/build_packages.py",
+    "install:desktop": "python3 scripts/install_desktop.py"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

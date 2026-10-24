@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=TabbedClient
+Comment=Zero-telemetry multi-tab web client with partition isolation
+Exec=/usr/bin/python3 /home/maci/antigravity/tabbetclient/desktop/tabbedclient.py
+Path=/home/maci/antigravity/tabbetclient
+Icon=web-browser
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;Chat;
+StartupNotify=true
+StartupWMClass=tabbedclient

@@ -1,0 +1,42 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg-5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f1117"/>
+      <stop offset="100%" stop-color="#181c26"/>
+    </linearGradient>
+    <linearGradient id="bento-active" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="bento-card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e2433"/>
+      <stop offset="100%" stop-color="#151922"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-5)"/>
+  <rect width="508" height="508" x="2" y="2" rx="110" fill="none" stroke="#2d3748" stroke-width="4"/>
+
+  <!-- Bal oldalsáv blokk (Bento 1: Sidebar) -->
+  <rect x="90" y="90" width="100" height="332" rx="26" fill="url(#bento-card)" stroke="#3b82f6" stroke-width="3"/>
+  <circle cx="140" cy="136" r="16" fill="#38bdf8"/>
+  <circle cx="140" cy="192" r="14" fill="#34d399" opacity="0.8"/>
+  <circle cx="140" cy="244" r="14" fill="#f59e0b" opacity="0.8"/>
+  <circle cx="140" cy="296" r="14" fill="#a78bfa" opacity="0.8"/>
+  <rect x="116" y="356" width="48" height="36" rx="10" fill="#334155" opacity="0.6"/>
+
+  <!-- Jobb felső nagy fül-ablak blokk (Bento 2: Fő munkaterület) -->
+  <rect x="210" y="90" width="212" height="206" rx="26" fill="url(#bento-active)" stroke="#60a5fa" stroke-width="3"/>
+  <circle cx="244" cy="126" r="8" fill="#ffffff" opacity="0.9"/>
+  <circle cx="266" cy="126" r="8" fill="#ffffff" opacity="0.5"/>
+  <circle cx="288" cy="126" r="8" fill="#ffffff" opacity="0.5"/>
+  <rect x="236" y="156" width="160" height="18" rx="8" fill="#ffffff" opacity="0.35"/>
+  <rect x="236" y="186" width="120" height="14" rx="6" fill="#ffffff" opacity="0.25"/>
+  <rect x="236" y="210" width="140" height="14" rx="6" fill="#ffffff" opacity="0.25"/>
+
+  <!-- Jobb alsó blokk (Bento 3: Adatvédelem és badge panel) -->
+  <rect x="210" y="316" width="212" height="106" rx="24" fill="url(#bento-card)" stroke="#334155" stroke-width="2"/>
+  <circle cx="250" cy="369" r="18" fill="#10b981"/>
+  <path d="M 243 369 L 248 374 L 258 364" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="282" y="354" width="94" height="14" rx="6" fill="#94a3b8" opacity="0.7"/>
+  <rect x="282" y="376" width="60" height="12" rx="5" fill="#64748b" opacity="0.5"/>
+</svg>

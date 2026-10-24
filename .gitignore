@@ -1,0 +1,36 @@
+# Felhasználói és munkamenet-profilok, sütik, gyorsítótárak, session adatok
+data/profiles/
+data/profiles/*
+
+# Helyi felhasználói konfiguráció (helyette data/config.json.template van verziózva)
+data/config.json
+
+# Csomagolási és build kimenetek
+dist/
+build/
+*.deb
+*.tar.gz
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Rust / Tauri
+src-tauri/target/
+
+# Rendszer és IDE fájlok
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/

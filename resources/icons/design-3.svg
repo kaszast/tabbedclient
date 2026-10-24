@@ -1,0 +1,47 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg-3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#161f30"/>
+    </linearGradient>
+    <linearGradient id="t-bar" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="t-stem" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-3)"/>
+  <rect width="508" height="508" x="2" y="2" rx="110" fill="none" stroke="#2a374a" stroke-width="4"/>
+
+  <!-- T felső vízszintes sáv (Ablak címsor) -->
+  <rect x="86" y="96" width="340" height="74" rx="24" fill="url(#t-bar)"/>
+  <!-- Címsor ablak-pontok -->
+  <circle cx="126" cy="133" r="9" fill="#ffffff" opacity="0.75"/>
+  <circle cx="154" cy="133" r="9" fill="#ffffff" opacity="0.4"/>
+  <circle cx="182" cy="133" r="9" fill="#ffffff" opacity="0.4"/>
+
+  <!-- T függőleges szár (Oldalsáv füllista) -->
+  <rect x="196" y="160" width="120" height="256" rx="26" fill="url(#t-stem)" stroke="#334155" stroke-width="3"/>
+
+  <!-- Fülek a szárban (3 vertikális pill) -->
+  <!-- 1. Fül (Aktív, kék) -->
+  <rect x="214" y="196" width="84" height="48" rx="14" fill="#2563eb"/>
+  <circle cx="236" cy="220" r="8" fill="#ffffff"/>
+  <line x1="254" y1="220" x2="284" y2="220" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 2. Fül (Zöld) -->
+  <rect x="214" y="260" width="84" height="48" rx="14" fill="#132337"/>
+  <circle cx="236" cy="284" r="8" fill="#10b981"/>
+  <line x1="254" y1="284" x2="278" y2="284" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 3. Fül (Lila) -->
+  <rect x="214" y="324" width="84" height="48" rx="14" fill="#132337"/>
+  <circle cx="236" cy="348" r="8" fill="#a855f7"/>
+  <line x1="254" y1="348" x2="278" y2="348" stroke="#94a3b8" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Jobb oldali dinamikus böngészőtér keret -->
+  <path d="M 336 210 L 400 210 C 414 210, 424 220, 424 234 L 424 370 C 424 384, 414 394, 400 394 L 336 394" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+</svg>

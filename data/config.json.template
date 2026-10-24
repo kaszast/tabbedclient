@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "theme": "slate",
+  "sidebarCollapsed": false,
+  "activeTabId": null,
+  "settings": {
+    "theme": "slate",
+    "sidebarCollapsed": false,
+    "minimizeToTrayOnClose": true,
+    "startMinimized": false,
+    "hardwareAcceleration": true
+  },
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Alapértelmezett",
+      "color": "#94a3b8"
+    },
+    {
+      "id": "work",
+      "name": "Munkahelyi",
+      "color": "#388bfd"
+    },
+    {
+      "id": "personal",
+      "name": "Magán",
+      "color": "#2ea043"
+    }
+  ],
+  "tabs": []
+}

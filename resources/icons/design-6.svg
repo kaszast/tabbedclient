@@ -1,0 +1,47 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg-6" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080a14"/>
+      <stop offset="100%" stop-color="#12182c"/>
+    </linearGradient>
+    <linearGradient id="core-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+    <filter id="glow-6" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg-6)"/>
+  <rect width="508" height="508" x="2" y="2" rx="110" fill="none" stroke="#25324d" stroke-width="4"/>
+
+  <!-- Pálya 1 (Külső elnyújtott ellipszis) -->
+  <ellipse cx="256" cy="256" rx="175" ry="90" fill="none" stroke="#3b82f6" stroke-width="3" stroke-dasharray="6 8" opacity="0.5" transform="rotate(-30 256 256)"/>
+
+  <!-- Pálya 2 (Keresztező ellipszis) -->
+  <ellipse cx="256" cy="256" rx="175" ry="90" fill="none" stroke="#10b981" stroke-width="3" stroke-dasharray="6 8" opacity="0.5" transform="rotate(30 256 256)"/>
+
+  <!-- Pálya 3 (Függőleges körgyűrű) -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#a855f7" stroke-width="2" opacity="0.4"/>
+
+  <!-- Központi fénylő mag (Webmag / Kliens) -->
+  <circle cx="256" cy="256" r="54" fill="url(#core-glow)" filter="url(#glow-6)"/>
+  <circle cx="256" cy="256" r="50" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.8"/>
+  <!-- Fehér belső fül-ikon a magban -->
+  <rect x="236" y="238" width="40" height="36" rx="8" fill="#ffffff" opacity="0.9"/>
+  <rect x="242" y="244" width="10" height="24" rx="3" fill="#2563eb"/>
+
+  <!-- Keringő csomópontok (Fiókok) -->
+  <!-- Kék csomópont -->
+  <circle cx="115" cy="180" r="20" fill="#38bdf8" filter="url(#glow-6)"/>
+  <circle cx="115" cy="180" r="10" fill="#ffffff"/>
+
+  <!-- Zöld csomópont -->
+  <circle cx="390" cy="190" r="18" fill="#34d399" filter="url(#glow-6)"/>
+  <circle cx="390" cy="190" r="9" fill="#ffffff"/>
+
+  <!-- Narancs csomópont -->
+  <circle cx="256" cy="396" r="18" fill="#f59e0b" filter="url(#glow-6)"/>
+  <circle cx="256" cy="396" r="9" fill="#ffffff"/>
+</svg>

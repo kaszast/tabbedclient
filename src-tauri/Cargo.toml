@@ -1,0 +1,19 @@
+[package]
+name = "tabbedclient"
+version = "1.0.0"
+description = "Zero-telemetry multi-tab web client with partition isolation"
+authors = ["TabbedClient Team"]
+edition = "2021"
+
+[lib]
+name = "tabbedclient_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = ["tray-icon"] }
+tauri-plugin-notification = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

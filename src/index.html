@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TabbedClient</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-slate">
+
+  <div id="app-container">
+
+    <!-- Címsor (Titlebar) -->
+    <header class="titlebar">
+      <div class="titlebar-left">
+        <button id="mobile-menu-btn" class="btn-icon" title="Menü megnyitása">
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+        </button>
+        <div class="app-brand">
+          <span class="app-logo-badge" title="TabbedClient">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="2" width="7" height="20" rx="2" fill="currentColor" opacity="0.9"/>
+              <rect x="11" y="2" width="11" height="12" rx="2" fill="currentColor"/>
+              <rect x="11" y="16" width="11" height="6" rx="2" fill="currentColor" opacity="0.7"/>
+            </svg>
+          </span>
+          <span>TabbedClient</span>
+        </div>
+        <span class="title-tag" id="header-active-tab-title">· [Betöltés...]</span>
+      </div>
+
+      <div class="titlebar-right">
+        <div class="status-badge" title="Minden külső telemetria és hirdetéskövetés tiltva">
+          <span class="dot-green"></span>
+          <span>Zero-Telemetry</span>
+        </div>
+        <button id="btn-open-settings" class="btn-icon" title="Beállítások és Témaválasztó">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Fő munkaterület (Sidebar + Content) -->
+    <div class="workspace">
+
+      <!-- Vertikális Fülsáv (Sidebar) -->
+      <aside id="sidebar" class="sidebar">
+        
+        <div class="sidebar-header">
+          <span class="sidebar-title">Fülek</span>
+          <!-- Összecsukó gomb (Asztali kompakt mód kapcsoló) -->
+          <button id="btn-toggle-collapse" class="btn-icon" title="Fülsáv összecsukása / kinyitása">
+            <svg id="collapse-icon" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+          </button>
+        </div>
+
+        <!-- Dinamikusan generált füllista -->
+        <div id="tabs-list" class="tabs-list">
+          <!-- JS tölti be -->
+        </div>
+
+        <div style="padding: 0 8px;">
+          <button id="btn-open-add-tab" class="btn-add-tab">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span class="add-tab-text">Új fül</span>
+          </button>
+        </div>
+
+        <!-- Sidebar lábléc -->
+        <div class="sidebar-footer">
+          <div class="footer-text" style="font-size: 11px; color: var(--text-muted);">
+            <span id="footer-profile-name">Profil: Munkahelyi</span>
+          </div>
+          <button id="btn-theme-quicktoggle" class="btn-icon" title="Gyors témaváltás">
+            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+          </button>
+        </div>
+
+      </aside>
+
+      <!-- Tartalmi terület (Webview & Navigation bar) -->
+      <main class="content-area">
+        
+        <div class="webview-header">
+          <div class="nav-controls">
+            <button id="btn-nav-back" class="btn-icon" title="Vissza">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <button id="btn-nav-forward" class="btn-icon" title="Előre">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+            </button>
+            <button id="btn-nav-reload" class="btn-icon" title="Újratöltés">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            </button>
+            <div class="url-bar">
+              <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"></path></svg>
+              <span id="active-url-display">https://...</span>
+            </div>
+          </div>
+
+          <div class="webview-actions">
+            <span class="partition-badge" id="active-partition-display">Profil: default</span>
+            <button id="btn-mute-tab" class="btn-icon" title="Értesítések ki/be">
+              <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+            </button>
+            <button id="btn-delete-tab" class="btn-icon" title="Fül törlése" style="color: var(--badge-bg);">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Webview Konténer (Natív Tauri Webview beágyazás vagy Standalone nézet) -->
+        <div id="webview-container" class="webview-container">
+          <div id="webview-placeholder" class="webview-placeholder">
+            <div class="placeholder-card">
+              <h3 style="margin-bottom: 8px; font-size: 15px;" id="placeholder-title">Webview Betöltése</h3>
+              <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;" id="placeholder-desc">
+                A kiválasztott weboldal a helyi adatvédelmi partíciójában fut.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </main>
+
+    </div>
+
+  </div>
+
+  <!-- MODAL: ÚJ FÜL HOZZÁADÁSA -->
+  <div id="add-tab-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">Új Fül / Szolgáltatás Hozzáadása</span>
+        <button class="btn-icon modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <div>
+          <label class="form-label">Sablonok (Gyorsgombok):</label>
+          <div class="preset-grid" id="modal-preset-grid">
+            <!-- JS tölti fel a sablonokat -->
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="new-tab-name">Szolgáltatás Neve</label>
+          <input type="text" id="new-tab-name" class="form-input" placeholder="pl. Saját Chat vagy CRM">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="new-tab-url">Webcím (URL)</label>
+          <input type="url" id="new-tab-url" class="form-input" placeholder="https://...">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="new-tab-profile">Fiók / Profil (Izolált partíció)</label>
+          <select id="new-tab-profile" class="form-select">
+            <option value="work">Munkahelyi (work)</option>
+            <option value="personal">Magán (personal)</option>
+            <option value="default">Alapértelmezett (default)</option>
+          </select>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close">Mégse</button>
+        <button type="button" id="btn-save-new-tab" class="btn btn-primary">Fül Hozzáadása</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: BEÁLLÍTÁSOK & TÉMAVÁLASZTÓ -->
+  <div id="settings-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span class="modal-title">Beállítások és Témák</span>
+        <button class="btn-icon modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <div>
+          <label class="form-label">Válassz Témát (5 jóváhagyott stílus):</label>
+          <div class="theme-options-grid" id="theme-options-grid">
+            <!-- JS tölti be az 5 témát -->
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label">Rendszertálca Viselkedés:</label>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+            <input type="checkbox" id="setting-minimize-tray" checked>
+            <span>Bezáráskor (X) minimalizálás a tálcára a háttérben való futáshoz</span>
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary modal-close">Kész</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
