@@ -179,7 +179,7 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
         parsed_target = urllib.parse.urlsplit(real_target)
         scheme = parsed_target.scheme.lower()
 
-        if not scheme or scheme in ("javascript", "about", "data"):
+        if not scheme or scheme in ("javascript", "about", "data", "file"):
             return False
 
         if scheme not in ("http", "https"):

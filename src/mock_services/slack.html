@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <title>Slack — #development</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: #1a1d21;
+      color: #d1d2d3;
+      height: 100vh;
+      display: flex;
+    }
+    .channels-bar {
+      width: 210px;
+      background-color: #19171d;
+      border-right: 1px solid #2c2933;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .workspace-header {
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+      padding: 0 8px 12px 8px;
+      border-bottom: 1px solid #2c2933;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .channel-item {
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #9ba1a6;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+    }
+    .channel-item.active {
+      background-color: #1164a3;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .chat-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background-color: #1a1d21;
+    }
+    .chat-header {
+      padding: 12px 20px;
+      border-bottom: 1px solid #2c2933;
+      font-size: 15px;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chat-messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .msg-group {
+      display: flex;
+      gap: 12px;
+    }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      background: #3b82f6;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .msg-body {
+      flex: 1;
+    }
+    .msg-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .msg-author {
+      font-weight: 700;
+      font-size: 14px;
+      color: #ffffff;
+    }
+    .msg-time {
+      font-size: 11px;
+      color: #616061;
+    }
+    .msg-text {
+      font-size: 13px;
+      line-height: 1.45;
+      color: #d1d2d3;
+    }
+    .badge-profile {
+      background: rgba(56, 139, 253, 0.15);
+      color: #388bfd;
+      border: 1px solid rgba(56, 139, 253, 0.3);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="channels-bar">
+    <div class="workspace-header">
+      <span>TechCorp Dev</span>
+      <span class="badge-profile">Munkahelyi</span>
+    </div>
+    <div class="channel-item"># general</div>
+    <div class="channel-item active"># development</div>
+    <div class="channel-item"># releases</div>
+    <div class="channel-item"># ui-design</div>
+  </div>
+
+  <div class="chat-area">
+    <div class="chat-header">
+      <span>#development — WebKitGTK & Multi-Account</span>
+      <span style="font-size: 12px; color: #10b981;">● 8 tag online</span>
+    </div>
+
+    <div class="chat-messages">
+      <div class="msg-group">
+        <div class="avatar" style="background:#0284c7;">P</div>
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span class="msg-author">Kovács Péter</span>
+            <span class="msg-time">11:15</span>
+          </div>
+          <div class="msg-text">Elkészült az új WebKitGTK izolációs modul, az automatizált egységtesztek zölden futnak!</div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="avatar" style="background:#10b981;">A</div>
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span class="msg-author">Nagy Anna</span>
+            <span class="msg-time">11:18</span>
+          </div>
+          <div class="msg-text">Kiváló! A sütik és gyorsítótárak profilonként teljesen izoláltak, nincs kereszt-követés.</div>
+        </div>
+      </div>
+
+      <div class="msg-group">
+        <div class="avatar" style="background:#8b5cf6;">CI</div>
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span class="msg-author">GitHub Actions Bot</span>
+            <span class="msg-time">11:20</span>
+          </div>
+          <div class="msg-text">Build #42 sikeres: <code>tabbedclient_1.0.0_all.deb</code> és hordozható csomagok elkészültek.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

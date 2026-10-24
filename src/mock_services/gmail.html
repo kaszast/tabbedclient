@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <title>Gmail — Beérkező levelek</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background-color: #1a1c23;
+      color: #e2e8f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid #2d3748;
+      background-color: #1e222d;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #ea4335;
+    }
+    .search-box {
+      flex: 1;
+      max-width: 600px;
+      margin: 0 20px;
+      background-color: #282e3e;
+      border: 1px solid #3b4252;
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.12);
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .content-area {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .mail-nav {
+      width: 200px;
+      padding: 12px 8px;
+      border-right: 1px solid #2d3748;
+      background-color: #181a20;
+    }
+    .compose-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #ea4335;
+      color: white;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px;
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 2px;
+    }
+    .nav-item.active {
+      background-color: #2d3748;
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .nav-count {
+      font-size: 11px;
+      font-weight: 700;
+      color: #ea4335;
+    }
+    .mail-list {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background-color: #13151b;
+      overflow-y: auto;
+    }
+    .mail-row {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid #232733;
+      gap: 14px;
+      font-size: 13px;
+    }
+    .mail-row.unread {
+      background-color: #1a1e29;
+      font-weight: 600;
+    }
+    .mail-sender {
+      width: 170px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #f1f5f9;
+    }
+    .mail-subject-snippet {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #94a3b8;
+    }
+    .mail-subject-snippet span {
+      color: #cbd5e1;
+    }
+    .mail-date {
+      width: 70px;
+      text-align: right;
+      font-size: 12px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L12 9.5l8.073-6.007c1.618-1.214 3.927-.059 3.927 1.964z"/></svg>
+      <span>Gmail</span>
+    </div>
+    <div class="search-box">
+      <span>🔍</span>
+      <span>Keresés a levelekben és mellékletekben...</span>
+    </div>
+    <div class="user-badge">
+      <span>●</span>
+      <span>Izolált Profil: Magán</span>
+    </div>
+  </div>
+
+  <div class="content-area">
+    <div class="mail-nav">
+      <div class="compose-btn">✏️ Új levél</div>
+      <div class="nav-item active"><span>📥 Beérkező levelek</span><span class="nav-count">4</span></div>
+      <div class="nav-item"><span>⭐ Csillagozott</span></div>
+      <div class="nav-item"><span>⏰ Késleltetett</span></div>
+      <div class="nav-item"><span>📤 Elküldött</span></div>
+      <div class="nav-item"><span>📝 Piszkozatok</span></div>
+    </div>
+
+    <div class="mail-list">
+      <div class="mail-row unread">
+        <input type="checkbox"> <span>★</span>
+        <div class="mail-sender">GitHub Releases</div>
+        <div class="mail-subject-snippet"><span>[kaszast/tabbedclient] Release v1.0.0 is live!</span> — A legújabb v1.0.0 kiadás sikeresen megjelent az automatizált csomagokkal...</div>
+        <div class="mail-date">10:45</div>
+      </div>
+      <div class="mail-row unread">
+        <input type="checkbox"> <span>★</span>
+        <div class="mail-sender">Vállalati Partner Kft.</div>
+        <div class="mail-subject-snippet"><span>Heti projektösszesítő és sprint tervek</span> — Tisztelt Partnerünk! Mellékelten küldjük a sprint áttekintését és az elvégzett modulok...</div>
+        <div class="mail-date">09:30</div>
+      </div>
+      <div class="mail-row unread">
+        <input type="checkbox"> <span>☆</span>
+        <div class="mail-sender">Google Naptár</div>
+        <div class="mail-subject-snippet"><span>Értesítés: Csapat Megbeszélés (Meet)</span> — Emlékeztető a holnapi 14:00 órakor kezdődő online egyeztetésről...</div>
+        <div class="mail-date">Tegnap</div>
+      </div>
+      <div class="mail-row unread">
+        <input type="checkbox"> <span>☆</span>
+        <div class="mail-sender">Biztonsági Központ</div>
+        <div class="mail-subject-snippet"><span>Új bejelentkezés észlelve: WebKitGTK</span> — Sikeres hitelesítés történt a védett munkamenet-partícióban...</div>
+        <div class="mail-date">Tegnap</div>
+      </div>
+      <div class="mail-row">
+        <input type="checkbox"> <span>☆</span>
+        <div class="mail-sender">Cloud Monitor</div>
+        <div class="mail-subject-snippet"><span>Havi infrastruktúra jelentés: 100% Uptime</span> — Minden rendszer zöld, telemetria: 0%, teljes munkamenet szeparáció aktív...</div>
+        <div class="mail-date">Okt 22</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

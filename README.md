@@ -65,7 +65,7 @@ A TabbedClient öt gondosan megtervezett színvilágot kínál, amelyek a munka�
 
 | Új Fül Hozzáadása & 9 Sablon | Rendszerbeállítások & Témaválasztó |
 | :---: | :---: |
-| <img src="docs/screenshots/feature_presets_modal.png" width="100%"> | <img src="docs/screenshots/feature_settings_modal.png" width="100%"> |
+| <img src="docs/screenshots/feature_presets_modal.png" width="100%"> | <img src="docs/screenshots/dashboard_themes_view.png" width="100%"> |
 
 ---
 

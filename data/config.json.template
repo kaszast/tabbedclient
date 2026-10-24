@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "theme": "slate",
   "sidebarCollapsed": false,
-  "activeTabId": null,
+  "activeTabId": "tab-gmail",
   "settings": {
     "theme": "slate",
     "sidebarCollapsed": false,
@@ -27,5 +27,78 @@
       "color": "#2ea043"
     }
   ],
-  "tabs": []
+  "tabs": [
+    {
+      "id": "tab-gmail",
+      "title": "Gmail",
+      "name": "Gmail",
+      "url": "https://mail.google.com",
+      "icon": "gmail",
+      "profile": "personal",
+      "profileId": "personal",
+      "notificationsEnabled": true,
+      "unreadCount": 4,
+      "order": 0
+    },
+    {
+      "id": "tab-slack",
+      "title": "Slack",
+      "name": "Slack",
+      "url": "https://slack.com",
+      "icon": "slack",
+      "profile": "work",
+      "profileId": "work",
+      "notificationsEnabled": true,
+      "unreadCount": 8,
+      "order": 1
+    },
+    {
+      "id": "tab-whatsapp",
+      "title": "WhatsApp Web",
+      "name": "WhatsApp Web",
+      "url": "https://web.whatsapp.com",
+      "icon": "whatsapp",
+      "profile": "personal",
+      "profileId": "personal",
+      "notificationsEnabled": true,
+      "unreadCount": 2,
+      "order": 2
+    },
+    {
+      "id": "tab-telegram",
+      "title": "Telegram",
+      "name": "Telegram",
+      "url": "https://web.telegram.org",
+      "icon": "telegram",
+      "profile": "personal",
+      "profileId": "personal",
+      "notificationsEnabled": true,
+      "unreadCount": 0,
+      "order": 3
+    },
+    {
+      "id": "tab-calendar",
+      "title": "Google Naptár",
+      "name": "Google Naptár",
+      "url": "https://calendar.google.com",
+      "icon": "calendar",
+      "profile": "work",
+      "profileId": "work",
+      "notificationsEnabled": true,
+      "unreadCount": 0,
+      "order": 4
+    },
+    {
+      "id": "tab-notion",
+      "title": "Notion Docs",
+      "name": "Notion Docs",
+      "url": "https://notion.so",
+      "icon": "notion",
+      "profile": "work",
+      "profileId": "work",
+      "notificationsEnabled": true,
+      "unreadCount": 0,
+      "order": 5
+    }
+  ]
 }
