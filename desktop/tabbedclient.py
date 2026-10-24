@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.parse
 import uuid
@@ -19,6 +20,8 @@ os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 import gi
 
 gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+gi.require_version('Gio', '2.0')
 try:
     gi.require_version('WebKit2', '4.1')
 except ValueError:
@@ -40,7 +43,7 @@ try:
 except Exception:
     Notify = None
 
-from gi.repository import Gtk, WebKit2, Gdk, GLib, GdkPixbuf
+from gi.repository import Gtk, WebKit2, Gdk, GLib, GdkPixbuf, Gio
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(BASE_DIR, "src")
@@ -399,6 +402,7 @@ class TabbedClientWindow(Gtk.Window):
 
         self.connect("delete-event", self.on_window_delete)
         self.connect("window-state-event", self.on_window_state_event)
+        self.connect("key-press-event", self._on_window_key_press)
 
         # startMinimized kezelése
         if self.config.get("settings", {}).get("startMinimized", False) and self.tray:
@@ -618,6 +622,9 @@ class TabbedClientWindow(Gtk.Window):
         welcome_url = GLib.filename_to_uri(os.path.join(SRC_DIR, "welcome.html"), None)
         self.welcome_webview.load_uri(welcome_url)
         self.welcome_webview.connect("load-changed", self.on_webview_load_changed)
+        self.welcome_webview.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        self.welcome_webview.connect("scroll-event", self._on_webview_scroll)
+        self.welcome_webview.connect("decide-policy", self._on_welcome_decide_policy)
 
         self.stack.add_named(self.welcome_webview, "welcome")
 
@@ -791,7 +798,30 @@ class TabbedClientWindow(Gtk.Window):
 
         print(f"[TabbedClient] Külső link megnyitása alapértelmezett böngészőben: {real_uri}")
 
-        # 1. Próbálkozás Gtk.show_uri_on_window vagy Gtk.show_uri használatával
+        # 1. GIO AppInfo (modern Freedesktop / GNOME / Zorin OS szabvány)
+        try:
+            if hasattr(Gio.AppInfo, "launch_default_for_uri"):
+                if Gio.AppInfo.launch_default_for_uri(real_uri, None):
+                    return
+        except Exception as e:
+            print(f"[Open External URI Gio Warning] {e}", file=sys.stderr)
+
+        # 2. Közvetlen xdg-open parancs (Linux asztali környezetek)
+        try:
+            subprocess.Popen(["xdg-open", real_uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+        except Exception:
+            pass
+
+        # 3. Python webbrowser modul (minden platform)
+        try:
+            import webbrowser
+            if webbrowser.open(real_uri):
+                return
+        except Exception as e:
+            print(f"[Open External URI Webbrowser Warning] {e}", file=sys.stderr)
+
+        # 4. Gtk.show_uri fallback
         try:
             time = Gtk.get_current_event_time() or Gdk.CURRENT_TIME
             if hasattr(Gtk, "show_uri_on_window") and self.get_window():
@@ -800,40 +830,61 @@ class TabbedClientWindow(Gtk.Window):
             elif hasattr(Gtk, "show_uri") and hasattr(self, "get_screen") and self.get_screen():
                 Gtk.show_uri(self.get_screen(), real_uri, time)
                 return
-        except Exception as e:
-            print(f"[Open External URI Warning] Gtk.show_uri: {e}", file=sys.stderr)
+        except Exception:
+            pass
 
-        # 2. Python webbrowser modul (amely kezeli a Windows, macOS és Linux alapértelmezett böngészőt is)
-        try:
-            import webbrowser
-            if webbrowser.open(real_uri):
-                return
-        except Exception as e:
-            print(f"[Open External URI Error] webbrowser: {e}", file=sys.stderr)
-
-        # 3. Közvetlen xdg-open / gio fallback (Linux asztali környezetek)
-        for cmd in (["xdg-open", real_uri], ["gio", "open", real_uri]):
-            try:
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return
-            except Exception:
-                pass
+    def _on_welcome_decide_policy(self, webview, decision, decision_type):
+        if decision_type in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+            nav_action = decision.get_navigation_action()
+            req = nav_action.get_request() if nav_action else None
+            uri = req.get_uri() if req else None
+            if uri and (uri.startswith("http://") or uri.startswith("https://")):
+                self.open_external_uri(uri)
+                decision.ignore()
+                return True
+        return False
 
     def _on_create_webview(self, webview, navigation_action, tab_id: str):
         """Kezeli a target='_blank' vagy window.open() hívásokat."""
         req = navigation_action.get_request() if navigation_action else None
-        if req:
-            uri = req.get_uri()
-            if uri and not uri.startswith("about:"):
-                real_url = extract_real_target_url(uri)
-                if not is_auth_or_login_url(real_url):
-                    self.open_external_uri(real_url)
-                    return None
-                else:
-                    # OAuth / azonosítási folyamat a fülön belül folytatódik
-                    webview.load_uri(real_url)
-                    return None
-        return None
+        uri = req.get_uri() if req else None
+
+        if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
+            real_url = extract_real_target_url(uri)
+            if not is_auth_or_login_url(real_url):
+                self.open_external_uri(real_url)
+                return None
+            else:
+                # OAuth / azonosítási folyamat a fülön belül folytatódik
+                webview.load_uri(real_url)
+                return None
+
+        # Ha az URI a létrehozás pillanatában még nem ismert (pl. JS window.open() késleltetett navigációval),
+        # létrehozunk egy átmeneti WebView-t azonos kontextussal, amely elfogja a navigációs kérést.
+        try:
+            temp_wv = WebKit2.WebView.new_with_context(webview.get_context())
+
+            def _on_temp_decide_policy(temp_view, decision, decision_type):
+                if decision_type == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+                    na = decision.get_navigation_action()
+                    r = na.get_request() if na else None
+                    u = r.get_uri() if r else None
+                    if u and not u.startswith("about:") and not u.startswith("javascript:"):
+                        real_u = extract_real_target_url(u)
+                        if not is_auth_or_login_url(real_u):
+                            self.open_external_uri(real_u)
+                        else:
+                            webview.load_uri(real_u)
+                decision.ignore()
+                GLib.idle_add(temp_view.destroy)
+                return True
+
+            temp_wv.connect("decide-policy", _on_temp_decide_policy)
+            GLib.timeout_add(10000, temp_wv.destroy)
+            return temp_wv
+        except Exception as err:
+            print(f"[Create WebView Warning] {err}", file=sys.stderr)
+            return None
 
     def _on_decide_policy(self, webview, decision, decision_type, tab_id: str):
         """Kezeli a navigációs döntéseket (új ablak, link kattintás, külső domain)."""
@@ -842,7 +893,7 @@ class TabbedClientWindow(Gtk.Window):
             nav_action = decision.get_navigation_action()
             req = nav_action.get_request() if nav_action else None
             uri = req.get_uri() if req else None
-            if uri and not uri.startswith("about:"):
+            if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
                 real_url = extract_real_target_url(uri)
                 if not is_auth_or_login_url(real_url):
                     self.open_external_uri(real_url)
@@ -851,36 +902,95 @@ class TabbedClientWindow(Gtk.Window):
             decision.ignore()
             return True
 
-        # 2. Normál navigációs művelet
+        # 2. Bármilyen navigációs művelet (LINK_CLICKED, OTHER, REDIRECT, stb.)
         if decision_type == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             nav_action = decision.get_navigation_action()
             if not nav_action:
                 return False
 
-            nav_type = nav_action.get_navigation_type()
             mouse_btn = nav_action.get_mouse_button()
             modifiers = nav_action.get_modifiers()
             ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
 
             req = nav_action.get_request()
             uri = req.get_uri() if req else None
+            if not uri or uri.startswith("about:") or uri.startswith("javascript:"):
+                return False
 
             # Középső egérgomb vagy Ctrl + bal klikk mindig külső böngészőben nyílik
-            if (mouse_btn == 2 or ctrl_pressed) and uri and not uri.startswith("about:"):
+            if mouse_btn == 2 or ctrl_pressed:
                 self.open_external_uri(uri)
                 decision.ignore()
                 return True
 
-            # Kattintás hivatkozásra (LINK_CLICKED)
-            if nav_type == WebKit2.NavigationType.LINK_CLICKED and uri:
-                tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
-                tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
-                if is_external_link(tab_url, uri):
-                    self.open_external_uri(uri)
-                    decision.ignore()
-                    return True
+            # Bármilyen linkkattintás, átirányítás vagy navigáció külső domainre
+            tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+            tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
+            if is_external_link(tab_url, uri):
+                self.open_external_uri(uri)
+                decision.ignore()
+                return True
 
         return False
+
+    def _on_webview_scroll(self, webview, event):
+        """Kezeli a Ctrl + egérgörgő nagyítást és kicsinyítést (Zoom In / Zoom Out)."""
+        if bool(event.state & Gdk.ModifierType.CONTROL_MASK):
+            current_zoom = webview.get_zoom_level()
+            new_zoom = current_zoom
+
+            if event.direction == Gdk.ScrollDirection.UP:
+                new_zoom = min(5.0, current_zoom + 0.1)
+            elif event.direction == Gdk.ScrollDirection.DOWN:
+                new_zoom = max(0.25, current_zoom - 0.1)
+            elif event.direction == Gdk.ScrollDirection.SMOOTH:
+                has_deltas, dx, dy = event.get_scroll_deltas()
+                if has_deltas:
+                    if dy < 0:
+                        new_zoom = min(5.0, current_zoom + 0.1)
+                    elif dy > 0:
+                        new_zoom = max(0.25, current_zoom - 0.1)
+
+            if abs(new_zoom - current_zoom) > 0.001:
+                webview.set_zoom_level(round(new_zoom, 2))
+            return True
+
+        return False
+
+    def _on_window_key_press(self, widget, event):
+        """Kezeli a billentyűzet-alapú nagyítást: Ctrl+, Ctrl-, Ctrl0."""
+        if bool(event.state & Gdk.ModifierType.CONTROL_MASK):
+            keyval = event.keyval
+            if keyval in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add):
+                self._zoom_active_view(0.1)
+                return True
+            elif keyval in (Gdk.KEY_minus, Gdk.KEY_KP_Subtract):
+                self._zoom_active_view(-0.1)
+                return True
+            elif keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
+                self._reset_active_zoom()
+                return True
+        return False
+
+    def _get_active_or_visible_webview(self):
+        active_id = self.config.get("activeTabId")
+        if active_id and active_id in self.webviews:
+            return self.webviews[active_id]
+        if hasattr(self, "welcome_webview") and self.stack.get_visible_child_name() == "welcome":
+            return self.welcome_webview
+        return None
+
+    def _zoom_active_view(self, delta: float):
+        wv = self._get_active_or_visible_webview()
+        if wv:
+            cur = wv.get_zoom_level()
+            target = max(0.25, min(5.0, round(cur + delta, 2)))
+            wv.set_zoom_level(target)
+
+    def _reset_active_zoom(self):
+        wv = self._get_active_or_visible_webview()
+        if wv:
+            wv.set_zoom_level(1.0)
 
     def _ensure_tab_webview(self, tab: dict):
         tab_id = tab.get("id")
@@ -897,6 +1007,8 @@ class TabbedClientWindow(Gtk.Window):
         wv_settings.set_enable_media_stream(True)
         wv_settings.set_enable_smooth_scrolling(True)
         wv_settings.set_javascript_can_access_clipboard(True)
+        if hasattr(wv_settings, "set_zoom_text_only"):
+            wv_settings.set_zoom_text_only(False)
         if hasattr(wv_settings, "set_enable_page_cache"):
             wv_settings.set_enable_page_cache(True)
         if hasattr(wv_settings, "set_enable_dns_prefetching"):
@@ -910,6 +1022,10 @@ class TabbedClientWindow(Gtk.Window):
         wv.set_hexpand(True)
         wv.set_vexpand(True)
         wv.set_background_color(Gdk.RGBA(0.059, 0.067, 0.082, 1.0))
+
+        # Nagyítás és kicsinyítés kezelése (Ctrl + egérgörgő)
+        wv.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        wv.connect("scroll-event", self._on_webview_scroll)
 
         # Biztonságos jogosultságkezelés és értesítési híd
         wv.connect("permission-request", lambda w, r: self._on_permission_request(w, r, tab_id))
