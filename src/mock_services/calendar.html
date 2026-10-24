@@ -2,140 +2,393 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8">
-  <title>Google Naptár</title>
+  <title>Google Naptár — 2026. Október</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      background-color: #1e222d;
-      color: #e2e8f0;
+      font-family: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background-color: #ffffff;
+      color: #3c4043;
       height: 100vh;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
+      user-select: none;
     }
-    .cal-header {
+
+    /* TOPBAR */
+    .topbar {
+      height: 64px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 20px;
-      border-bottom: 1px solid #2d3748;
-      background-color: #181b24;
+      padding: 8px 16px;
+      border-bottom: 1px solid #dadce0;
+      background-color: #ffffff;
     }
-    .cal-title {
-      font-size: 18px;
-      font-weight: 700;
-      color: #ffffff;
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .cal-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    .cal-logo-text {
+      font-size: 22px;
+      color: #3c4043;
+      font-weight: 400;
+    }
+    .today-btn {
+      border: 1px solid #dadce0;
+      background: #ffffff;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-weight: 500;
+      font-size: 14px;
+      color: #3c4043;
+      cursor: pointer;
+    }
+    .today-btn:hover {
+      background: #f1f3f4;
+    }
+    .nav-arrows {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .nav-arrow-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .nav-arrow-btn:hover {
+      background: #f1f3f4;
+    }
+    .current-date-title {
+      font-size: 20px;
+      font-weight: 400;
+      color: #3c4043;
+      margin-left: 8px;
+    }
+
+    .topbar-right {
       display: flex;
       align-items: center;
       gap: 12px;
     }
-    .profile-pill {
-      font-size: 11px;
-      font-weight: 600;
-      background: rgba(56, 139, 253, 0.15);
-      color: #388bfd;
-      border: 1px solid rgba(56, 139, 253, 0.3);
-      padding: 3px 8px;
-      border-radius: 12px;
+    .view-selector {
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #3c4043;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
     }
-    .cal-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 12px;
-      padding: 20px;
+
+    /* MAIN CONTAINER */
+    .cal-body {
+      display: flex;
       flex: 1;
+      overflow: hidden;
     }
-    .day-col {
-      background-color: #14171f;
-      border: 1px solid #282e3e;
-      border-radius: 8px;
-      padding: 12px;
+
+    /* MINI SIDEBAR */
+    .cal-sidebar {
+      width: 256px;
+      min-width: 256px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
+      gap: 20px;
+      border-right: 1px solid #dadce0;
+    }
+    .create-btn {
+      height: 48px;
+      border-radius: 24px;
+      box-shadow: 0 1px 3px 0 rgba(60,64,67,0.3), 0 4px 8px 3px rgba(60,64,67,0.15);
+      display: inline-flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 12px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #3c4043;
+      cursor: pointer;
+      align-self: flex-start;
+      background: #ffffff;
+    }
+    .my-cals-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #3c4043;
+      margin-bottom: 8px;
+    }
+    .cal-checkbox-row {
+      display: flex;
+      align-items: center;
       gap: 10px;
+      font-size: 13px;
+      color: #3c4043;
+      margin-bottom: 8px;
+      cursor: pointer;
+    }
+
+    /* WEEK GRID */
+    .cal-grid-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .week-header-row {
+      display: grid;
+      grid-template-columns: 60px repeat(5, 1fr);
+      border-bottom: 1px solid #dadce0;
+      background: #ffffff;
+    }
+    .day-header-cell {
+      padding: 12px 8px;
+      text-align: center;
+      border-left: 1px solid #dadce0;
     }
     .day-name {
-      font-size: 13px;
-      font-weight: 700;
-      color: #94a3b8;
-      border-bottom: 1px solid #232733;
-      padding-bottom: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #70757a;
+      text-transform: uppercase;
     }
-    .event-card {
-      padding: 8px 10px;
+    .day-number {
+      font-size: 24px;
+      font-weight: 400;
+      color: #3c4043;
+      margin-top: 4px;
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      line-height: 40px;
+      border-radius: 50%;
+    }
+    .day-number.today {
+      background: #1a73e8;
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: 60px repeat(5, 1fr);
+      flex: 1;
+    }
+    .time-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .time-slot-label {
+      height: 56px;
+      font-size: 11px;
+      color: #70757a;
+      text-align: right;
+      padding-right: 8px;
+      transform: translateY(-8px);
+    }
+    .day-slot-col {
+      border-left: 1px solid #dadce0;
+      position: relative;
+      background: #ffffff;
+    }
+    .hour-line {
+      height: 56px;
+      border-bottom: 1px solid #f1f3f4;
+    }
+
+    /* EVENT CHIPS */
+    .cal-event {
+      position: absolute;
+      left: 4px;
+      right: 4px;
       border-radius: 6px;
+      padding: 6px 8px;
       font-size: 12px;
-      line-height: 1.4;
-      border-left: 3px solid;
+      color: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+      overflow: hidden;
     }
-    .ev-blue { background: rgba(56, 139, 253, 0.15); border-color: #388bfd; color: #93c5fd; }
-    .ev-green { background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #6ee7b7; }
-    .ev-purple { background: rgba(168, 85, 247, 0.15); border-color: #a855f7; color: #d8b4fe; }
-    .ev-time { font-size: 10px; opacity: 0.8; font-weight: 600; margin-bottom: 2px; }
-    .ev-title { font-weight: 600; }
+    .event-blue { background: #0284c7; }
+    .event-green { background: #059669; }
+    .event-purple { background: #7c3aed; }
+    .event-amber { background: #d97706; }
+    .event-title { font-weight: 600; margin-bottom: 2px; }
+    .event-time { font-size: 10px; opacity: 0.9; }
   </style>
 </head>
 <body>
-  <div class="cal-header">
-    <div class="cal-title">
-      <span>📅 2026. Október — Sprint Naptár</span>
-      <span class="profile-pill">Munkahelyi Profil</span>
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="cal-logo">
+        <svg width="28" height="28" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="17" rx="3" fill="#1a73e8"/>
+          <path d="M3 8.5h18V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3.5z" fill="#4285f4"/>
+          <text x="12" y="17.5" font-size="9" font-weight="700" fill="#ffffff" text-anchor="middle" font-family="sans-serif">31</text>
+        </svg>
+        <span class="cal-logo-text">Naptár</span>
+      </div>
+      <button class="today-btn">Ma</button>
+      <div class="nav-arrows">
+        <div class="nav-arrow-btn">‹</div>
+        <div class="nav-arrow-btn">›</div>
+      </div>
+      <div class="current-date-title">2026. Október</div>
     </div>
-    <div style="font-size: 12px; color: #94a3b8;">Heti nézet (Munkanapok)</div>
+
+    <div class="topbar-right">
+      <div class="view-selector">
+        <span>Munkahét</span>
+        <span>▼</span>
+      </div>
+      <div style="width:36px; height:36px; border-radius:50%; background:#1a73e8; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600;">M</div>
+    </div>
   </div>
 
-  <div class="cal-grid">
-    <div class="day-col">
-      <div class="day-name">Hétfő (Okt 20)</div>
-      <div class="event-card ev-blue">
-        <div class="ev-time">09:30 - 10:00</div>
-        <div class="ev-title">Napi Standup & Sprint Indítás</div>
+  <!-- BODY -->
+  <div class="cal-body">
+    <!-- SIDEBAR -->
+    <div class="cal-sidebar">
+      <div class="create-btn">
+        <svg width="24" height="24" viewBox="0 0 24 24"><path fill="#EA4335" d="M11 11H5V13H11V19H13V13H19V11H13V5H11V11Z"/><path fill="#4285F4" d="M13 11V5H11V11H5V13H11V19H13V13H19V11H13Z"/></svg>
+        <span>Létrehozás</span>
       </div>
-      <div class="event-card ev-purple">
-        <div class="ev-time">14:00 - 15:00</div>
-        <div class="ev-title">Architektúra Áttekintés</div>
+
+      <div>
+        <div class="my-cals-title">Saját naptárak</div>
+        <div class="cal-checkbox-row">
+          <input type="checkbox" checked>
+          <span style="width:10px; height:10px; border-radius:50%; background:#0284c7;"></span>
+          <span>Munkahelyi projektek</span>
+        </div>
+        <div class="cal-checkbox-row">
+          <input type="checkbox" checked>
+          <span style="width:10px; height:10px; border-radius:50%; background:#059669;"></span>
+          <span>Személyes & Család</span>
+        </div>
+        <div class="cal-checkbox-row">
+          <input type="checkbox" checked>
+          <span style="width:10px; height:10px; border-radius:50%; background:#7c3aed;"></span>
+          <span>TabbedClient Sprint</span>
+        </div>
       </div>
     </div>
 
-    <div class="day-col">
-      <div class="day-name">Kedd (Okt 21)</div>
-      <div class="event-card ev-green">
-        <div class="ev-time">10:00 - 11:30</div>
-        <div class="ev-title">WebKitGTK Modul Kódvizsgálat</div>
+    <!-- MAIN GRID -->
+    <div class="cal-grid-container">
+      <div class="week-header-row">
+        <div></div>
+        <div class="day-header-cell">
+          <div class="day-name">Hétfő</div>
+          <div class="day-number">20</div>
+        </div>
+        <div class="day-header-cell">
+          <div class="day-name">Kedd</div>
+          <div class="day-number">21</div>
+        </div>
+        <div class="day-header-cell">
+          <div class="day-name">Szerda</div>
+          <div class="day-number">22</div>
+        </div>
+        <div class="day-header-cell">
+          <div class="day-name">Csütörtök</div>
+          <div class="day-number">23</div>
+        </div>
+        <div class="day-header-cell">
+          <div class="day-name">Péntek</div>
+          <div class="day-number today">24</div>
+        </div>
       </div>
-    </div>
 
-    <div class="day-col">
-      <div class="day-name">Szerda (Okt 22)</div>
-      <div class="event-card ev-blue">
-        <div class="ev-time">09:30 - 10:00</div>
-        <div class="ev-title">Napi Standup</div>
-      </div>
-      <div class="event-card ev-green">
-        <div class="ev-time">15:00 - 16:00</div>
-        <div class="ev-title">Biztonsági és Sütizolációs Audit</div>
-      </div>
-    </div>
+      <div class="time-grid">
+        <!-- Time labels -->
+        <div class="time-col">
+          <div class="time-slot-label">09:00</div>
+          <div class="time-slot-label">10:00</div>
+          <div class="time-slot-label">11:00</div>
+          <div class="time-slot-label">12:00</div>
+          <div class="time-slot-label">13:00</div>
+          <div class="time-slot-label">14:00</div>
+          <div class="time-slot-label">15:00</div>
+          <div class="time-slot-label">16:00</div>
+        </div>
 
-    <div class="day-col">
-      <div class="day-name">Csütörtök (Okt 23)</div>
-      <div class="event-card ev-purple">
-        <div class="ev-time">11:00 - 12:00</div>
-        <div class="ev-title">Linux & Windows Csomagolási Teszt</div>
-      </div>
-    </div>
+        <!-- Mon -->
+        <div class="day-slot-col">
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="cal-event event-blue" style="top: 28px; height: 50px;">
+            <div class="event-title">Sprint Tervezés</div>
+            <div class="event-time">09:30 – 10:30</div>
+          </div>
+        </div>
 
-    <div class="day-col">
-      <div class="day-name">Péntek (Okt 24)</div>
-      <div class="event-card ev-blue">
-        <div class="ev-time">09:30 - 10:00</div>
-        <div class="ev-title">Napi Standup</div>
-      </div>
-      <div class="event-card ev-green">
-        <div class="ev-time">16:00 - 16:30</div>
-        <div class="ev-title">Sprint Retrospektív & Kiadás</div>
+        <!-- Tue -->
+        <div class="day-slot-col">
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="cal-event event-green" style="top: 84px; height: 75px;">
+            <div class="event-title">WebKitGTK Kódvizsgálat</div>
+            <div class="event-time">10:30 – 12:00</div>
+          </div>
+        </div>
+
+        <!-- Wed -->
+        <div class="day-slot-col">
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="cal-event event-purple" style="top: 196px; height: 60px;">
+            <div class="event-title">Adatbiztonsági Szinkron</div>
+            <div class="event-time">14:00 – 15:00</div>
+          </div>
+        </div>
+
+        <!-- Thu -->
+        <div class="day-slot-col">
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="cal-event event-amber" style="top: 140px; height: 50px;">
+            <div class="event-title">Release Tesztelés</div>
+            <div class="event-time">11:30 – 12:30</div>
+          </div>
+        </div>
+
+        <!-- Fri (Today) -->
+        <div class="day-slot-col">
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div><div class="hour-line"></div>
+          <div class="cal-event event-blue" style="top: 28px; height: 45px;">
+            <div class="event-title">Napi Standup</div>
+            <div class="event-time">09:30 – 10:15</div>
+          </div>
+          <div class="cal-event event-green" style="top: 280px; height: 60px;">
+            <div class="event-title">Sprint Retrospektív & V1 Release 🎉</div>
+            <div class="event-time">15:00 – 16:00</div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
+
 </body>
 </html>

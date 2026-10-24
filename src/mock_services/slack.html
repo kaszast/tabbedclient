@@ -2,175 +2,471 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8">
-  <title>Slack — #development</title>
+  <title>Slack — TechCorp | #development</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-family: 'Slack-Lato', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background-color: #1a1d21;
       color: #d1d2d3;
       height: 100vh;
       display: flex;
+      overflow: hidden;
+      user-select: none;
     }
-    .channels-bar {
-      width: 210px;
+
+    /* 1. SLACK WORKSPACES STRIP (LEFTMOST) */
+    .slack-rail {
+      width: 68px;
+      min-width: 68px;
       background-color: #19171d;
-      border-right: 1px solid #2c2933;
-      padding: 12px 8px;
+      border-right: 1px solid #28252f;
       display: flex;
       flex-direction: column;
-    }
-    .workspace-header {
-      font-size: 15px;
-      font-weight: 700;
-      color: #ffffff;
-      padding: 0 8px 12px 8px;
-      border-bottom: 1px solid #2c2933;
-      margin-bottom: 12px;
-      display: flex;
-      justify-content: space-between;
       align-items: center;
+      padding: 12px 0;
+      gap: 14px;
     }
-    .channel-item {
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 13px;
+    .rail-ws-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #4a154b;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 18px;
+      box-shadow: 0 0 0 2px #ffffff;
+      cursor: pointer;
+    }
+    .rail-ws-alt {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #2c2d30;
       color: #9ba1a6;
       display: flex;
       align-items: center;
-      gap: 6px;
-      margin-bottom: 2px;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 16px;
+      cursor: pointer;
     }
-    .channel-item.active {
-      background-color: #1164a3;
+    .rail-add-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      color: #9ba1a6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    /* 2. CHANNELS SIDEBAR */
+    .slack-sidebar {
+      width: 220px;
+      min-width: 220px;
+      background-color: #1f1f23;
+      border-right: 1px solid #28252f;
+      display: flex;
+      flex-direction: column;
+    }
+    .ws-header {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      border-bottom: 1px solid #28252f;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .ws-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sidebar-scroll {
+      flex: 1;
+      padding: 12px 8px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sidebar-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #8c8f94;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 10px 10px 4px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .channel-row {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #b9bbbe;
+      cursor: pointer;
+    }
+    .channel-row:hover {
+      background: rgba(255,255,255,0.06);
+      color: #ffffff;
+    }
+    .channel-row.active {
+      background: #1164a3;
       color: #ffffff;
       font-weight: 600;
     }
-    .chat-area {
+    .channel-badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: #e01e5a;
+      color: #ffffff;
+      padding: 1px 6px;
+      border-radius: 10px;
+      margin-left: auto;
+    }
+    .dm-user {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 30px;
+      padding: 0 10px;
+      border-radius: 6px;
+      font-size: 14px;
+      color: #b9bbbe;
+      cursor: pointer;
+    }
+    .dm-status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #2bac76;
+    }
+    .dm-status-dot.offline {
+      background: transparent;
+      border: 1.5px solid #8c8f94;
+    }
+
+    /* 3. MAIN CHAT AREA */
+    .chat-view {
       flex: 1;
       display: flex;
       flex-direction: column;
       background-color: #1a1d21;
     }
     .chat-header {
-      padding: 12px 20px;
-      border-bottom: 1px solid #2c2933;
-      font-size: 15px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid #28252f;
+      background-color: #1a1d21;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header-channel-name {
+      font-size: 16px;
       font-weight: 700;
       color: #ffffff;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 6px;
     }
-    .chat-messages {
+    .header-channel-topic {
+      font-size: 13px;
+      color: #8c8f94;
+      border-left: 1px solid #3c3f44;
+      padding-left: 12px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      color: #8c8f94;
+    }
+
+    /* MESSAGE LIST */
+    .message-list {
       flex: 1;
-      padding: 20px;
       overflow-y: auto;
+      padding: 16px 20px;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 20px;
     }
-    .msg-group {
+    .msg-item {
       display: flex;
       gap: 12px;
     }
-    .avatar {
-      width: 36px;
-      height: 36px;
-      border-radius: 4px;
-      background: #3b82f6;
-      color: white;
+    .msg-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 700;
-      font-size: 14px;
+      font-size: 16px;
+      color: #ffffff;
+      flex-shrink: 0;
     }
-    .msg-body {
+    .msg-content {
       flex: 1;
     }
     .msg-meta {
       display: flex;
-      align-items: center;
+      align-items: baseline;
       gap: 8px;
       margin-bottom: 4px;
     }
     .msg-author {
+      font-size: 15px;
       font-weight: 700;
-      font-size: 14px;
       color: #ffffff;
     }
+    .msg-badge {
+      font-size: 10px;
+      background: rgba(255,255,255,0.12);
+      color: #b9bbbe;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
     .msg-time {
-      font-size: 11px;
+      font-size: 12px;
       color: #616061;
     }
     .msg-text {
-      font-size: 13px;
-      line-height: 1.45;
+      font-size: 14px;
+      line-height: 1.5;
       color: #d1d2d3;
     }
-    .badge-profile {
-      background: rgba(56, 139, 253, 0.15);
-      color: #388bfd;
-      border: 1px solid rgba(56, 139, 253, 0.3);
-      font-size: 11px;
-      padding: 3px 8px;
+    .msg-code {
+      background: #111214;
+      border: 1px solid #28252f;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-top: 6px;
+      font-family: 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+      font-size: 12px;
+      color: #38bdf8;
+      display: inline-block;
+    }
+    .reactions {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .reaction-chip {
+      background: #222529;
+      border: 1px solid #383a40;
       border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: #d1d2d3;
+      cursor: pointer;
+    }
+    .reaction-chip.active {
+      background: #1b2738;
+      border-color: #1d9bd1;
+      color: #38bdf8;
+    }
+
+    /* CHAT INPUT BOX */
+    .input-container {
+      padding: 0 20px 20px 20px;
+    }
+    .input-box {
+      border: 1px solid #383a40;
+      border-radius: 8px;
+      background: #222529;
+      overflow: hidden;
+    }
+    .input-toolbar {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: #1e2124;
+      border-bottom: 1px solid #2e3036;
+      color: #8c8f94;
+      font-size: 13px;
+    }
+    .input-area {
+      padding: 12px 14px;
+      color: #8c8f94;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
-  <div class="channels-bar">
-    <div class="workspace-header">
-      <span>TechCorp Dev</span>
-      <span class="badge-profile">Munkahelyi</span>
-    </div>
-    <div class="channel-item"># general</div>
-    <div class="channel-item active"># development</div>
-    <div class="channel-item"># releases</div>
-    <div class="channel-item"># ui-design</div>
+
+  <!-- 1. SLACK RAIL -->
+  <div class="slack-rail">
+    <div class="rail-ws-btn" title="TechCorp">TC</div>
+    <div class="rail-ws-alt" title="OpenSource Community">OS</div>
+    <div class="rail-add-btn" title="Új munkaterület hozzáadása">+</div>
   </div>
 
-  <div class="chat-area">
-    <div class="chat-header">
-      <span>#development — WebKitGTK & Multi-Account</span>
-      <span style="font-size: 12px; color: #10b981;">● 8 tag online</span>
+  <!-- 2. CHANNELS SIDEBAR -->
+  <div class="slack-sidebar">
+    <div class="ws-header">
+      <div class="ws-title">
+        <span>TechCorp Dev</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+      </div>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
     </div>
 
-    <div class="chat-messages">
-      <div class="msg-group">
-        <div class="avatar" style="background:#0284c7;">P</div>
-        <div class="msg-body">
+    <div class="sidebar-scroll">
+      <div class="sidebar-section-title">
+        <span>Csatornák</span>
+        <span>+</span>
+      </div>
+      <div class="channel-row">
+        <span>#</span>
+        <span>general</span>
+      </div>
+      <div class="channel-row active">
+        <span>#</span>
+        <span>development</span>
+        <span class="channel-badge">4</span>
+      </div>
+      <div class="channel-row">
+        <span>#</span>
+        <span>releases</span>
+      </div>
+      <div class="channel-row">
+        <span>#</span>
+        <span>ui-feedback</span>
+      </div>
+
+      <div class="sidebar-section-title" style="margin-top: 12px;">
+        <span>Közvetlen üzenetek</span>
+        <span>+</span>
+      </div>
+      <div class="dm-user">
+        <span class="dm-status-dot"></span>
+        <span>Nagy Anna</span>
+      </div>
+      <div class="dm-user">
+        <span class="dm-status-dot"></span>
+        <span>Kovács Péter</span>
+      </div>
+      <div class="dm-user">
+        <span class="dm-status-dot offline"></span>
+        <span>GitLab Bot</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. MAIN CHAT VIEW -->
+  <div class="chat-view">
+    <div class="chat-header">
+      <div class="header-left">
+        <div class="header-channel-name">
+          <span>#development</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        </div>
+        <div class="header-channel-topic">Multi-Profile izoláció, WebKitGTK motor & Linux csomagolás</div>
+      </div>
+      <div class="header-right">
+        <span>👥 14 tag</span>
+      </div>
+    </div>
+
+    <div class="message-list">
+      <!-- MSG 1 -->
+      <div class="msg-item">
+        <div class="msg-avatar" style="background: #0284c7;">KP</div>
+        <div class="msg-content">
           <div class="msg-meta">
             <span class="msg-author">Kovács Péter</span>
             <span class="msg-time">11:15</span>
           </div>
-          <div class="msg-text">Elkészült az új WebKitGTK izolációs modul, az automatizált egységtesztek zölden futnak!</div>
+          <div class="msg-text">
+            Sikerült implementálni a GTK3 WebKit2 különálló DataManager környezetét. A süti-fájlok és a helyi cache profilonként (pl. <code>personal</code> vs <code>work</code>) teljes szeparációban futnak!
+          </div>
+          <div class="msg-code">WebKitWebsiteDataManager(base_data_directory=profile_path)</div>
+          <div class="reactions">
+            <div class="reaction-chip active"><span>🚀</span><span>5</span></div>
+            <div class="reaction-chip"><span>🎉</span><span>3</span></div>
+          </div>
         </div>
       </div>
 
-      <div class="msg-group">
-        <div class="avatar" style="background:#10b981;">A</div>
-        <div class="msg-body">
+      <!-- MSG 2 -->
+      <div class="msg-item">
+        <div class="msg-avatar" style="background: #10b981;">NA</div>
+        <div class="msg-content">
           <div class="msg-meta">
             <span class="msg-author">Nagy Anna</span>
-            <span class="msg-time">11:18</span>
+            <span class="msg-time">11:22</span>
           </div>
-          <div class="msg-text">Kiváló! A sütik és gyorsítótárak profilonként teljesen izoláltak, nincs kereszt-követés.</div>
+          <div class="msg-text">
+            Kiváló munka! Leteszteltem a külső linkkezelést is: ha egy Gmail levélben külső linkre kattintunk, az automatikusan az alapértelmezett rendszerböngészőben nyílik meg, nem a webview-n belül.
+          </div>
+          <div class="reactions">
+            <div class="reaction-chip active"><span>👍</span><span>4</span></div>
+          </div>
         </div>
       </div>
 
-      <div class="msg-group">
-        <div class="avatar" style="background:#8b5cf6;">CI</div>
-        <div class="msg-body">
+      <!-- MSG 3 -->
+      <div class="msg-item">
+        <div class="msg-avatar" style="background: #7c3aed;">CI</div>
+        <div class="msg-content">
           <div class="msg-meta">
-            <span class="msg-author">GitHub Actions Bot</span>
-            <span class="msg-time">11:20</span>
+            <span class="msg-author">GitHub Actions</span>
+            <span class="msg-badge">APP</span>
+            <span class="msg-time">11:30</span>
           </div>
-          <div class="msg-text">Build #42 sikeres: <code>tabbedclient_1.0.0_all.deb</code> és hordozható csomagok elkészültek.</div>
+          <div class="msg-text">
+            Sikeres build a <code>main</code> ágon! Elkészült az új <code>.deb</code> és <code>AppImage</code> telepítő, a 2x nagyobb fül-ikonok és a Zorin OS tálca-integráció aktív.
+          </div>
+          <div class="reactions">
+            <div class="reaction-chip"><span>🔥</span><span>6</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INPUT BOX -->
+    <div class="input-container">
+      <div class="input-box">
+        <div class="input-toolbar">
+          <b>B</b> <i>I</i> <s>S</s> | 🔗 | &lt;/&gt; | ≡
+        </div>
+        <div class="input-area">
+          Üzenet küldése a(z) #development csatornára...
         </div>
       </div>
     </div>
   </div>
+
 </body>
 </html>
