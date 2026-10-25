@@ -30,9 +30,9 @@ def copy_project_data(dest_data_dir):
     os.makedirs(profiles_dir, exist_ok=True)
     for p in ("default", "work", "personal"):
         os.makedirs(os.path.join(profiles_dir, p), exist_ok=True)
-    src_cfg = os.path.join(BASE_DIR, "data", "config.json")
+    src_cfg = os.path.join(BASE_DIR, "data", "config.json.template")
     if not os.path.exists(src_cfg):
-        src_cfg = os.path.join(BASE_DIR, "data", "config.json.template")
+        src_cfg = os.path.join(BASE_DIR, "data", "config.json")
     if os.path.exists(src_cfg):
         shutil.copy2(src_cfg, os.path.join(dest_data_dir, "config.json"))
 

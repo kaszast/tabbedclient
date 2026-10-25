@@ -6,11 +6,8 @@ data/profiles/*
 data/config.json
 
 # Csomagolási és build kimenetek
-dist/
+dist/build_tmp/
 build/
-*.deb
-*.tar.gz
-*.zip
 
 # Python
 __pycache__/
