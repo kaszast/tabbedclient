@@ -14,7 +14,7 @@
 
 <br>
 
-<img src="docs/screenshots/hero_main.png" alt="TabbedClient Főképernyő" width="100%">
+<img src="docs/realscreens/gmail.png" alt="TabbedClient Főképernyő" width="100%">
 
 </div>
 
@@ -35,45 +35,21 @@
 
 ## 📸 Képernyőképek és Felület
 
-### 1. Központi Irányítópult (Dashboard)
-A kezdőlapon áttekinthetők az aktív fülek, a munkamenet-profilok, az értesítési számlálók és a legnépszerűbb szolgáltatások egykattintásos gyorsgombjai:
+### 1. Fő Munkafelület (Gmail & Vertikális Fülsáv)
+A valódi munkafelület bal oldali vertikális navigációs sávval és zökkenőmentes webes munkamenettel:
 
 <p align="center">
-  <img src="docs/screenshots/dashboard_overview.png" alt="TabbedClient Irányítópult" width="95%">
+  <img src="docs/realscreens/gmail.png" alt="TabbedClient Valós Munkafelület" width="100%">
 </p>
 
 ---
 
-### 2. Témarendszer (5 Jóváhagyott Stílus)
-
-A TabbedClient öt gondosan megtervezett színvilágot kínál, amelyek a munkaállomás típusához igazíthatók:
-
-| 01. Slate Studio (Mélyszürke sötét) | 02. Nordic Crisp (Tiszta skandináv világos) |
-| :---: | :---: |
-| <img src="docs/screenshots/theme_slate.png" width="100%"> | <img src="docs/screenshots/theme_nordic.png" width="100%"> |
-| **03. JetBrains Obsidian (Mérnöki sötét IDE)** | **08. Solarized Paper (Akadémiai szépia / Kékfény-mentes)** |
-| <img src="docs/screenshots/theme_jetbrains.png" width="100%"> | <img src="docs/screenshots/theme_solarized.png" width="100%"> |
+### 2. Központi Irányítópult (Dashboard)
+A kezdőlapon áttekinthetők az aktív fülek, a munkamenet-profilok, a rendszerállapot és a gyorsindító sablonok:
 
 <p align="center">
-  <b>10. Enterprise Cobalt (Vállalati tiszta fehér & kobaltkék)</b><br>
-  <img src="docs/screenshots/theme_enterprise.png" width="95%">
+  <img src="docs/realscreens/mainpage.png" alt="TabbedClient Irányítópult" width="95%">
 </p>
-
----
-
-### 3. Fülkezelés és Beállítások Modálok
-
-| Új Fül Hozzáadása & 9 Sablon | Rendszerbeállítások & Témaválasztó |
-| :---: | :---: |
-| <img src="docs/screenshots/feature_presets_modal.png" width="100%"> | <img src="docs/screenshots/dashboard_themes_view.png" width="100%"> |
-
----
-
-### 4. Kompakt Fülsáv & Munkamenet-Izoláció
-
-| Kompakt Icon-Only Mód (48px) | Partíciók és Profiljelzők |
-| :---: | :---: |
-| <img src="docs/screenshots/feature_compact_sidebar.png" width="100%"> | <img src="docs/screenshots/feature_partitions.png" width="100%"> |
 
 ---
 

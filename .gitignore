@@ -5,9 +5,6 @@ data/profiles/*
 # Helyi felhasználói konfiguráció (helyette data/config.json.template van verziózva)
 data/config.json
 
-# Felhasználói nyers képernyőképek (személyes adatok védelme)
-docs/realscreens/
-
 # Csomagolási és build kimenetek
 dist/
 build/
