@@ -1344,6 +1344,7 @@ class TabbedClientWindow(Gtk.Window):
         self.current_welcome_view = view_name
         self.config["activeTabId"] = None
         self.stack.set_visible_child_name("welcome")
+        self.stack.show_all()
         if view_name == "settings":
             self.set_title("Beállítások — TabbedClient")
         elif view_name == "add-tab":
