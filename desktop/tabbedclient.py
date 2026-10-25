@@ -4,11 +4,13 @@ TabbedClient — Natív Linux GTK3 + WebKitGTK Multi-Tab Kliens
 Zero-Telemetry, Teljes Munkamenet-Izoláció (Multi-Account)
 """
 
+import atexit
 import base64
 import io
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import urllib.parse
@@ -86,6 +88,96 @@ try:
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
 except Exception:
     pass
+
+INSTANCE_SOCKET_NAME = "tabbedclient.sock"
+
+
+def get_instance_socket_path() -> str:
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime_dir or not os.path.exists(runtime_dir):
+        xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        runtime_dir = os.path.join(xdg_config, "tabbedclient")
+    try:
+        os.makedirs(runtime_dir, exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(runtime_dir, INSTANCE_SOCKET_NAME)
+
+
+def try_activate_existing_instance() -> bool:
+    """
+    Megpróbálja elérni a már futó példányt és előtérbe hozni azt.
+    Ha sikerül, True-val tér vissza (és az új folyamat kiléphet).
+    Ha nem fut példány, False-szal tér vissza.
+    """
+    sock_path = get_instance_socket_path()
+    if not os.path.exists(sock_path):
+        return False
+
+    try:
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client.settimeout(1.0)
+        client.connect(sock_path)
+        client.sendall(b"ACTIVATE\n")
+        client.close()
+        return True
+    except (ConnectionRefusedError, FileNotFoundError, socket.timeout):
+        # Az előző futás összeomlott és a socket fájl elárvult
+        try:
+            if os.path.exists(sock_path):
+                os.unlink(sock_path)
+        except Exception:
+            pass
+        return False
+    except Exception as err:
+        print(f"[SingleInstance Connect Warning] {err}", file=sys.stderr)
+        return False
+
+
+def setup_single_instance_server(activate_callback):
+    """
+    Létrehozza a helyi Unix domain socket szervert az egypéldányos futáshoz.
+    GLib IO watch segítségével eseményvezérelten figyeli a bejövő aktiválási kéréseket.
+    """
+    sock_path = get_instance_socket_path()
+    try:
+        if os.path.exists(sock_path):
+            try:
+                os.unlink(sock_path)
+            except Exception:
+                pass
+
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(sock_path)
+        server.listen(5)
+        server.setblocking(False)
+
+        def _on_socket_activity(source, condition):
+            try:
+                conn, _ = server.accept()
+                data = conn.recv(1024)
+                if b"ACTIVATE" in data:
+                    GLib.idle_add(activate_callback)
+                conn.close()
+            except Exception:
+                pass
+            return True
+
+        GLib.io_add_watch(server.fileno(), GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN, _on_socket_activity)
+
+        def _cleanup():
+            try:
+                server.close()
+                if os.path.exists(sock_path):
+                    os.unlink(sock_path)
+            except Exception:
+                pass
+        atexit.register(_cleanup)
+
+        return server
+    except Exception as err:
+        print(f"[SingleInstance Server Error] {err}", file=sys.stderr)
+        return None
 
 VALID_THEMES = ["slate", "nordic", "jetbrains", "solarized", "enterprise"]
 SIDEBAR_EXPANDED_WIDTH = 220
@@ -332,6 +424,13 @@ def load_config():
         title = t.get("title") or t.get("name") or "Szolgáltatás"
         profile = t.get("profile") or t.get("profileId") or "default"
         url = t.get("url", "https://example.com")
+        try:
+            zoom_lvl = round(float(t.get("zoomLevel", 1.0)), 2)
+            if zoom_lvl < 0.25 or zoom_lvl > 5.0:
+                zoom_lvl = 1.0
+        except (ValueError, TypeError):
+            zoom_lvl = 1.0
+
         normalized.append({
             "id": t.get("id") or f"tab-{uuid.uuid4().hex[:8]}",
             "title": title,
@@ -344,7 +443,8 @@ def load_config():
             "unreadCount": int(t.get("unreadCount", 0)),
             "order": int(t.get("order", idx)),
             "favicon": t.get("favicon") or "",
-            "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url)
+            "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url),
+            "zoomLevel": zoom_lvl
         })
     # Ha sablonból töltöttük be, és a felhasználói config még nem létezik, mentsük el a felhasználói XDG helyre
     if target_path != CONFIG_PATH and not os.path.exists(CONFIG_PATH):
@@ -712,6 +812,14 @@ class TabbedClientWindow(Gtk.Window):
             self.sync_all_views()
 
     def on_window_delete(self, widget, event):
+        if hasattr(self, "_config_save_timer") and self._config_save_timer:
+            try:
+                GLib.source_remove(self._config_save_timer)
+            except Exception:
+                pass
+            self._config_save_timer = None
+            save_config(self.config)
+
         settings = self.config.get("settings", {})
         minimize_tray = settings.get("minimizeToTrayOnClose", True)
         if minimize_tray and self.tray is not None:
@@ -1020,8 +1128,35 @@ class TabbedClientWindow(Gtk.Window):
 
         return False
 
+    def _schedule_config_save(self):
+        if hasattr(self, "_config_save_timer") and self._config_save_timer:
+            try:
+                GLib.source_remove(self._config_save_timer)
+            except Exception:
+                pass
+        def _do_save():
+            save_config(self.config)
+            self._config_save_timer = None
+            return False
+        self._config_save_timer = GLib.timeout_add(300, _do_save)
+
+    def _save_webview_zoom(self, webview, zoom_level: float):
+        tab_id = None
+        for tid, wv in self.tab_webviews.items():
+            if wv == webview:
+                tab_id = tid
+                break
+        if tab_id:
+            self._save_tab_zoom(tab_id, zoom_level)
+
+    def _save_tab_zoom(self, tab_id: str, zoom_level: float):
+        target_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+        if target_tab:
+            target_tab["zoomLevel"] = round(float(zoom_level), 2)
+            self._schedule_config_save()
+
     def _on_webview_scroll(self, webview, event):
-        """Kezeli a Ctrl + egérgörgő nagyítást és kicsinyítést (Zoom In / Zoom Out)."""
+        """Kezeli a Ctrl + egérgörgő nagyítást és kicsinyítést (Zoom In / Zoom Out) és perzisztálja a beállítást."""
         if bool(event.state & Gdk.ModifierType.CONTROL_MASK):
             current_zoom = webview.get_zoom_level()
             new_zoom = current_zoom
@@ -1039,7 +1174,9 @@ class TabbedClientWindow(Gtk.Window):
                         new_zoom = max(0.25, current_zoom - 0.1)
 
             if abs(new_zoom - current_zoom) > 0.001:
-                webview.set_zoom_level(round(new_zoom, 2))
+                rounded_zoom = round(new_zoom, 2)
+                webview.set_zoom_level(rounded_zoom)
+                self._save_webview_zoom(webview, rounded_zoom)
             return True
 
         return False
@@ -1059,25 +1196,29 @@ class TabbedClientWindow(Gtk.Window):
                 return True
         return False
 
-    def _get_active_or_visible_webview(self):
+    def _get_active_tab_id_and_webview(self):
         active_id = self.config.get("activeTabId")
-        if active_id and active_id in self.webviews:
-            return self.webviews[active_id]
+        if active_id and active_id in self.tab_webviews:
+            return active_id, self.tab_webviews[active_id]
         if hasattr(self, "welcome_webview") and self.stack.get_visible_child_name() == "welcome":
-            return self.welcome_webview
-        return None
+            return "welcome", self.welcome_webview
+        return None, None
 
     def _zoom_active_view(self, delta: float):
-        wv = self._get_active_or_visible_webview()
+        tab_id, wv = self._get_active_tab_id_and_webview()
         if wv:
             cur = wv.get_zoom_level()
             target = max(0.25, min(5.0, round(cur + delta, 2)))
             wv.set_zoom_level(target)
+            if tab_id and tab_id != "welcome":
+                self._save_tab_zoom(tab_id, target)
 
     def _reset_active_zoom(self):
-        wv = self._get_active_or_visible_webview()
+        tab_id, wv = self._get_active_tab_id_and_webview()
         if wv:
             wv.set_zoom_level(1.0)
+            if tab_id and tab_id != "welcome":
+                self._save_tab_zoom(tab_id, 1.0)
 
     def _ensure_tab_webview(self, tab: dict):
         tab_id = tab.get("id")
@@ -1113,6 +1254,10 @@ class TabbedClientWindow(Gtk.Window):
         # Nagyítás és kicsinyítés kezelése (Ctrl + egérgörgő)
         wv.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
         wv.connect("scroll-event", self._on_webview_scroll)
+        saved_zoom = float(tab.get("zoomLevel", 1.0))
+        if saved_zoom < 0.25 or saved_zoom > 5.0:
+            saved_zoom = 1.0
+        wv.set_zoom_level(saved_zoom)
 
         # Biztonságos jogosultságkezelés és értesítési híd
         wv.connect("permission-request", lambda w, r: self._on_permission_request(w, r, tab_id))
@@ -1162,8 +1307,18 @@ class TabbedClientWindow(Gtk.Window):
                 progress_bar.show()
             elif event == WebKit2.LoadEvent.COMMITTED:
                 progress_bar.set_fraction(max(0.4, view.get_estimated_load_progress()))
+                target_t = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+                if target_t:
+                    z = float(target_t.get("zoomLevel", 1.0))
+                    if abs(view.get_zoom_level() - z) > 0.001:
+                        view.set_zoom_level(z)
             elif event == WebKit2.LoadEvent.FINISHED:
                 progress_bar.hide()
+                target_t = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+                if target_t:
+                    z = float(target_t.get("zoomLevel", 1.0))
+                    if abs(view.get_zoom_level() - z) > 0.001:
+                        view.set_zoom_level(z)
                 js_extract = (
                     "(function(){"
                     "var el=document.querySelector('link[rel*=\"icon\"]');"
@@ -1414,6 +1569,12 @@ class TabbedClientWindow(Gtk.Window):
             target_tab["unreadCount"] = 0
 
         self._ensure_tab_webview(target_tab)
+        wv = self.tab_webviews.get(tab_id)
+        if wv:
+            saved_zoom = float(target_tab.get("zoomLevel", 1.0))
+            if abs(wv.get_zoom_level() - saved_zoom) > 0.001:
+                wv.set_zoom_level(saved_zoom)
+
         self.config["activeTabId"] = tab_id
         self.previous_tab_id = tab_id
         save_config(self.config)
@@ -1545,7 +1706,8 @@ class TabbedClientWindow(Gtk.Window):
                 "unreadCount": 0,
                 "order": len(self.config.get("tabs", [])),
                 "favicon": "",
-                "faviconUrl": _default_favicon_url(url)
+                "faviconUrl": _default_favicon_url(url),
+                "zoomLevel": 1.0
             }
             self.config.setdefault("tabs", []).append(new_tab)
             save_config(self.config)
@@ -1557,7 +1719,18 @@ class TabbedClientWindow(Gtk.Window):
 
 
 def main():
+    # Egypéldányos ellenőrzés: ha már fut példány, aktiváljuk és ez a folyamat kilép
+    if try_activate_existing_instance():
+        sys.exit(0)
+
     win = TabbedClientWindow()
+
+    def _on_activate_remote():
+        win.deiconify()
+        win.show_window_and_present()
+
+    server = setup_single_instance_server(_on_activate_remote)
+
     Gtk.main()
 
 
