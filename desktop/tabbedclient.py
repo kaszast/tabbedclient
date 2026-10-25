@@ -144,18 +144,85 @@ def extract_real_target_url(target_uri: str) -> str:
     return target_uri
 
 
+# Kapcsolódó szolgáltatás-domain csoportok (amelyek azonos ökoszisztémát / belső infrastruktúrát képviselnek)
+SERVICE_EQUIVALENT_GROUPS = [
+    # Meta ökoszisztéma (Facebook, Messenger, WhatsApp, Instagram, Threads, CDN és belső sandbox proxy)
+    {
+        "facebook.com", "messenger.com", "fbsbx.com", "fbcdn.net",
+        "m.me", "whatsapp.com", "whatsapp.net", "meta.com",
+        "instagram.com", "threads.net"
+    },
+    # Google ökoszisztéma (Kereső, Gmail, Naptár, Drive, Docs, YouTube, fiókok és statikus tartalmak)
+    {
+        "google.com", "google.hu", "gstatic.com", "googleusercontent.com",
+        "youtube.com", "youtu.be", "googlevideo.com", "googleapis.com",
+        "ggpht.com"
+    },
+    # Microsoft ökoszisztéma (Outlook, Office, Teams, SharePoint, OneDrive, Live, Skype, Auth)
+    {
+        "microsoft.com", "live.com", "office.com", "office365.com",
+        "sharepoint.com", "outlook.com", "teams.microsoft.com", "skype.com",
+        "msftauth.net", "msauth.net", "microsoftonline.com"
+    },
+    # Slack ökoszisztéma
+    {
+        "slack.com", "slack-edge.com", "slack-msgs.com", "slack-redir.net"
+    },
+]
+
+
+def get_root_domain(host: str) -> str:
+    """Kinyeri a regisztrálható fődomaint (pl. www.messenger.com -> messenger.com, sub.google.co.uk -> google.co.uk)."""
+    if not host:
+        return ""
+    host = host.lower().split(":")[0].strip(".")
+    parts = host.split(".")
+    if len(parts) <= 1:
+        return host
+
+    two_part_tlds = ("co.uk", "org.uk", "gov.uk", "com.br", "co.jp", "com.au")
+    if len(parts) >= 3 and ".".join(parts[-2:]) in two_part_tlds:
+        return ".".join(parts[-3:])
+
+    return ".".join(parts[-2:])
+
+
+def are_domains_same_service(host_a: str, host_b: str) -> bool:
+    """Eldönti, hogy a két domain cím ugyanazon webes szolgáltatás / ökoszisztéma része-e."""
+    if not host_a or not host_b:
+        return False
+
+    root_a = get_root_domain(host_a)
+    root_b = get_root_domain(host_b)
+
+    if root_a and root_a == root_b:
+        return True
+
+    for group in SERVICE_EQUIVALENT_GROUPS:
+        in_a = any(root_a == item or host_a == item or host_a.endswith("." + item) for item in group)
+        in_b = any(root_b == item or host_b == item or host_b.endswith("." + item) for item in group)
+        if in_a and in_b:
+            return True
+
+    return False
+
+
 def is_auth_or_login_url(uri: str) -> bool:
-    """Meghatározza, hogy az adott webcím bejelentkezési vagy OAuth azonosítási folyamathoz tartozik-e."""
+    """Meghatározza, hogy az adott webcím bejelentkezési, azonosítási vagy belső szolgáltatás-proxyhoz tartozik-e."""
     try:
         parsed = urllib.parse.urlsplit(uri)
-        netloc = parsed.netloc.lower()
+        netloc = parsed.netloc.lower().split(":")[0]
         path = parsed.path.lower()
+
+        # Meta belső MAW (Multi-Account Web) proxy és háttér-kommunikációs végpontok
+        if "fbsbx.com" in netloc or "maw_proxy_page" in path:
+            return True
 
         # Ismert hitelesítési és azonosítási szerverek
         auth_hosts = (
             "accounts.google.", "login.microsoftonline.", "login.live.",
             "appleid.apple.", "auth.slack.", "auth0.", "okta.",
-            "identity.", "cas.", "sso."
+            "identity.", "cas.", "sso.", "msftauth.net", "msauth.net"
         )
         if any(h in netloc for h in auth_hosts):
             return True
@@ -163,7 +230,7 @@ def is_auth_or_login_url(uri: str) -> bool:
         # Tipikus OAuth / SSO végpontok
         auth_paths = (
             "/oauth", "/oauth2", "/saml", "/sso", "/login", "/signin",
-            "/auth", "/authenticate", "/session", "/checkpoint"
+            "/auth", "/authenticate", "/session", "/checkpoint", "/maw_proxy_page"
         )
         if any(path.startswith(ap) or ap in path for ap in auth_paths):
             return True
@@ -185,7 +252,7 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
         if scheme not in ("http", "https"):
             return True  # mailto:, tel:, magnet: stb.
 
-        # Ha bejelentkezési / OAuth folyamat, a fülön belül kell maradnia a süti-izolációhoz
+        # Ha bejelentkezési / OAuth folyamat vagy belső proxy, a fülön belül kell maradnia a süti-izolációhoz
         if is_auth_or_login_url(real_target):
             return False
 
@@ -199,18 +266,13 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
         if target_host == base_host:
             return False
 
-        # Fődomain egyezés ellenőrzése (pl. mail.google.com és google.com vagy drive.google.com)
-        base_parts = base_host.split(".")
-        target_parts = target_host.split(".")
-        if len(base_parts) >= 2 and len(target_parts) >= 2:
-            base_root = ".".join(base_parts[-2:])
-            target_root = ".".join(target_parts[-2:])
-            if base_root == target_root and base_root not in ("com", "org", "net", "hu", "io", "co.uk"):
-                # Kivétel: Google /url átirányítás vagy kereső külső célponttal
-                if "google." in base_root and "google." in target_root:
-                    if real_target != target_uri or parsed_target.path.startswith("/url"):
-                        return True
-                return False
+        # Ha azonos ökoszisztémához / szolgáltatáshoz tartoznak
+        if are_domains_same_service(base_host, target_host):
+            # Kivétel: Google /url keresési átirányítás külső célponttal
+            if "google." in base_host and "google." in target_host:
+                if real_target != target_uri or parsed_target.path.startswith("/url"):
+                    return True
+            return False
 
         return True
     except Exception:
@@ -846,21 +908,31 @@ class TabbedClientWindow(Gtk.Window):
 
     def _on_create_webview(self, webview, navigation_action, tab_id: str):
         """Kezeli a target='_blank' vagy window.open() hívásokat."""
+        is_gesture = navigation_action.is_user_gesture() if navigation_action else False
         req = navigation_action.get_request() if navigation_action else None
         uri = req.get_uri() if req else None
 
+        # Ha nem felhasználói gesztus indította (pl. háttérben futó script, automata popup vagy Meta MAW proxy)
+        if not is_gesture:
+            return None
+
+        tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+        tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
+
         if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
             real_url = extract_real_target_url(uri)
-            if not is_auth_or_login_url(real_url):
-                self.open_external_uri(real_url)
-                return None
-            else:
+            if is_auth_or_login_url(real_url):
                 # OAuth / azonosítási folyamat a fülön belül folytatódik
                 webview.load_uri(real_url)
                 return None
+            elif is_external_link(tab_url, real_url):
+                self.open_external_uri(real_url)
+                return None
+            else:
+                webview.load_uri(real_url)
+                return None
 
-        # Ha az URI a létrehozás pillanatában még nem ismert (pl. JS window.open() késleltetett navigációval),
-        # létrehozunk egy átmeneti WebView-t azonos kontextussal, amely elfogja a navigációs kérést.
+        # Ha az URI a létrehozás pillanatában még nem ismert, de van felhasználói gesztus
         try:
             temp_wv = WebKit2.WebView.new_with_context(webview.get_context())
 
@@ -871,10 +943,15 @@ class TabbedClientWindow(Gtk.Window):
                     u = r.get_uri() if r else None
                     if u and not u.startswith("about:") and not u.startswith("javascript:"):
                         real_u = extract_real_target_url(u)
-                        if not is_auth_or_login_url(real_u):
-                            self.open_external_uri(real_u)
-                        else:
+                        if is_auth_or_login_url(real_u):
                             webview.load_uri(real_u)
+                        else:
+                            curr_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+                            curr_tab_url = curr_tab.get("url", "") if curr_tab else (webview.get_uri() or "")
+                            if is_external_link(curr_tab_url, real_u):
+                                self.open_external_uri(real_u)
+                            else:
+                                webview.load_uri(real_u)
                 decision.ignore()
                 GLib.idle_add(temp_view.destroy)
                 return True
@@ -888,17 +965,24 @@ class TabbedClientWindow(Gtk.Window):
 
     def _on_decide_policy(self, webview, decision, decision_type, tab_id: str):
         """Kezeli a navigációs döntéseket (új ablak, link kattintás, külső domain)."""
+        tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+        tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
+
         # 1. Új ablak művelet (pl. link target='_blank' vagy window.open)
         if decision_type == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
             nav_action = decision.get_navigation_action()
+            is_gesture = nav_action.is_user_gesture() if nav_action else False
             req = nav_action.get_request() if nav_action else None
             uri = req.get_uri() if req else None
             if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
                 real_url = extract_real_target_url(uri)
-                if not is_auth_or_login_url(real_url):
-                    self.open_external_uri(real_url)
-                else:
+                if is_auth_or_login_url(real_url):
                     webview.load_uri(real_url)
+                elif is_gesture:
+                    if is_external_link(tab_url, real_url):
+                        self.open_external_uri(real_url)
+                    else:
+                        webview.load_uri(real_url)
             decision.ignore()
             return True
 
@@ -911,6 +995,8 @@ class TabbedClientWindow(Gtk.Window):
             mouse_btn = nav_action.get_mouse_button()
             modifiers = nav_action.get_modifiers()
             ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
+            nav_type = nav_action.get_navigation_type()
+            is_gesture = nav_action.is_user_gesture()
 
             req = nav_action.get_request()
             uri = req.get_uri() if req else None
@@ -923,13 +1009,14 @@ class TabbedClientWindow(Gtk.Window):
                 decision.ignore()
                 return True
 
-            # Bármilyen linkkattintás, átirányítás vagy navigáció külső domainre
-            tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
-            tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
-            if is_external_link(tab_url, uri):
-                self.open_external_uri(uri)
-                decision.ignore()
-                return True
+            # Csak akkor nyitunk külső böngészőt, ha kifejezett felhasználói kattintás történt!
+            # Háttérben futó scriptek, automatikus átirányítások, iframe-ek (user_gesture nélkül) a WebView-n belül maradnak.
+            is_user_click = (nav_type == WebKit2.NavigationType.LINK_CLICKED) or (is_gesture and mouse_btn in (1, 2))
+            if is_user_click:
+                if is_external_link(tab_url, uri):
+                    self.open_external_uri(uri)
+                    decision.ignore()
+                    return True
 
         return False
 

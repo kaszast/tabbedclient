@@ -7,7 +7,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "node tests/test_tabs.js && node tests/test_themes.js",
+    "test": "node tests/test_tabs.js && node tests/test_themes.js && python3 -m unittest tests/test_navigation.py",
     "start": "python3 desktop/tabbedclient.py",
     "start:linux": "python3 desktop/tabbedclient.py",
     "build:packages": "python3 scripts/build_packages.py",
