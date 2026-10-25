@@ -260,6 +260,10 @@ SERVICE_EQUIVALENT_GROUPS = [
     {
         "slack.com", "slack-edge.com", "slack-msgs.com", "slack-redir.net"
     },
+    # Telegram ökoszisztéma (fiókok, webes felület és témák)
+    {
+        "telegram.org", "t.me", "telegra.ph", "telesco.pe"
+    },
 ]
 
 
@@ -342,7 +346,9 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
             return False
 
         if scheme not in ("http", "https"):
-            return True  # mailto:, tel:, magnet: stb.
+            if scheme in ("tg", "tel", "sms"):
+                return False
+            return True  # mailto:, magnet: stb.
 
         # Ha bejelentkezési / OAuth folyamat vagy belső proxy, a fülön belül kell maradnia a süti-izolációhoz
         if is_auth_or_login_url(real_target):
@@ -787,25 +793,60 @@ class TabbedClientWindow(Gtk.Window):
         self.welcome_webview.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
         self.welcome_webview.connect("scroll-event", self._on_webview_scroll)
         self.welcome_webview.connect("decide-policy", self._on_welcome_decide_policy)
+        try:
+            self.welcome_webview.connect("close", lambda w: (w.stop_emission_by_name("close"), True)[1])
+        except Exception:
+            pass
 
         self.stack.add_named(self.welcome_webview, "welcome")
 
-        # Mentett fülek előtöltése induláskor
-        saved_tabs = self.config.get("tabs", [])
-        for tab in saved_tabs:
-            self._ensure_tab_webview(tab)
+        # 1. Fülek rendezése szigorúan a felvételi sorrendjük (order) szerint
+        ordered_tabs = sorted(self.config.get("tabs", []), key=lambda t: int(t.get("order", 0)))
 
+        # 2. Kezdő aktív fül meghatározása és ablakcím beállítása
         saved_active = self.config.get("activeTabId")
-        if saved_active and saved_active in self.webviews:
+        if saved_active and any(t.get("id") == saved_active for t in ordered_tabs):
             self.previous_tab_id = saved_active
-            self.stack.set_visible_child_name(saved_active)
-            active_tab = next((t for t in saved_tabs if t.get("id") == saved_active), None)
-            if active_tab:
-                title = active_tab.get("title") or active_tab.get("name") or "Szolgáltatás"
-                self.set_title(f"{title} — TabbedClient")
+            active_tab = next(t for t in ordered_tabs if t.get("id") == saved_active)
+            title = active_tab.get("title") or active_tab.get("name") or "Szolgáltatás"
+            self.set_title(f"{title} — TabbedClient")
         else:
             self.config["activeTabId"] = None
             self.stack.set_visible_child_name("welcome")
+
+        # 3. Automatikus szekvenciális előtöltés az összes fülre a felvételi sorrendben
+        self._preload_tabs_in_order(ordered_tabs, saved_active)
+
+    def _preload_tabs_in_order(self, ordered_tabs: list, active_tab_id: str):
+        """
+        Induláskor automatikusan betölti az összes felvett fül tartalmát
+        szigorúan a felvételi sorrendjükben (az order mező szerint).
+        Az aktív fül azonnal betöltődik, a további fülek pedig szekvenciálisan,
+        egymás után ütemezve inicializálódnak a hálózat és a CPU túlterhelése nélkül.
+        """
+        if not ordered_tabs:
+            return
+
+        # Ha van kijelölt aktív fül, azt azonnal inicializáljuk és megjelenítjük
+        if active_tab_id and any(t.get("id") == active_tab_id for t in ordered_tabs):
+            active_tab = next(t for t in ordered_tabs if t.get("id") == active_tab_id)
+            self._ensure_tab_webview(active_tab)
+            self.stack.set_visible_child_name(active_tab_id)
+
+        # Az összes többi fület pontosan a felvételi sorrendben töltjük be
+        queue = [t for t in ordered_tabs if t.get("id") != active_tab_id]
+
+        def _step_load(idx=0):
+            if idx < len(queue):
+                tab = queue[idx]
+                self._ensure_tab_webview(tab)
+                # 200 ms szünet a következő fül előtt a folyamatos és stabil hálózati betöltésért
+                GLib.timeout_add(200, lambda: _step_load(idx + 1))
+            return False
+
+        if queue:
+            initial_delay = 200 if active_tab_id else 50
+            GLib.timeout_add(initial_delay, lambda: _step_load(0))
 
     def on_webview_load_changed(self, webview, load_event):
         if load_event == WebKit2.LoadEvent.FINISHED:
@@ -1220,6 +1261,38 @@ class TabbedClientWindow(Gtk.Window):
             if tab_id and tab_id != "welcome":
                 self._save_tab_zoom(tab_id, 1.0)
 
+    def _on_webview_close(self, webview, tab_id: str):
+        """
+        Kezeli a fülön belüli JavaScript window.close() hívásokat.
+        Megakadályozza, hogy a weboldal (pl. Telegram Web téma vagy modál bezárásakor)
+        a WebKit alapértelmezett viselkedése révén megsemmisítse a főablakot (gtk_widget_destroy).
+        """
+        try:
+            webview.stop_emission_by_name("close")
+        except Exception:
+            pass
+        return True
+
+    def _on_web_process_terminated(self, webview, reason, tab_id: str):
+        """Kezeli a WebKit renderelő folyamatának váratlan leállását, és automatikusan helyreállítja a fület."""
+        print(f"[WebKit Warning] WebProcess terminálódott a(z) {tab_id} fülön (indok: {reason}). Automatikus helyreállítás...", file=sys.stderr)
+        try:
+            webview.stop_emission_by_name("web-process-terminated")
+        except Exception:
+            pass
+        GLib.timeout_add(800, lambda: (webview.reload(), False)[1])
+        return True
+
+    def _on_web_process_crashed(self, webview, tab_id: str):
+        """Kezeli a WebKit renderelő folyamatának összeomlását régebbi WebKit2 futtatókörnyezetben."""
+        print(f"[WebKit Warning] WebProcess összeomlott a(z) {tab_id} fülön. Automatikus helyreállítás...", file=sys.stderr)
+        try:
+            webview.stop_emission_by_name("web-process-crashed")
+        except Exception:
+            pass
+        GLib.timeout_add(800, lambda: (webview.reload(), False)[1])
+        return True
+
     def _ensure_tab_webview(self, tab: dict):
         tab_id = tab.get("id")
         if not tab_id or tab_id in self.webviews:
@@ -1241,6 +1314,17 @@ class TabbedClientWindow(Gtk.Window):
             wv_settings.set_enable_page_cache(True)
         if hasattr(wv_settings, "set_enable_dns_prefetching"):
             wv_settings.set_enable_dns_prefetching(True)
+
+        # Hardveres gyorsítás és WebGL beállítások a webes témák és canvas stabilitásához
+        hw_accel = self.config.get("settings", {}).get("hardwareAcceleration", True)
+        if hasattr(wv_settings, "set_hardware_acceleration_policy"):
+            policy = WebKit2.HardwareAccelerationPolicy.ON_DEMAND if hw_accel else WebKit2.HardwareAccelerationPolicy.NEVER
+            wv_settings.set_hardware_acceleration_policy(policy)
+        if hasattr(wv_settings, "set_enable_webgl"):
+            wv_settings.set_enable_webgl(True)
+        if hasattr(wv_settings, "set_enable_accelerated_2d_canvas"):
+            wv_settings.set_enable_accelerated_2d_canvas(hw_accel)
+
         wv_settings.set_user_agent(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         )
@@ -1267,6 +1351,20 @@ class TabbedClientWindow(Gtk.Window):
         # Külső hivatkozások megnyitása külső böngészőben (pl. Gmail 'View in browser', e-mail linkek)
         wv.connect("decide-policy", lambda w, d, dt: self._on_decide_policy(w, d, dt, tab_id))
         wv.connect("create", lambda w, a: self._on_create_webview(w, a, tab_id))
+
+        # Ablakbezárási védelem és renderelő folyamat stabilitás (Telegram téma / window.close védelem)
+        try:
+            wv.connect("close", lambda w: self._on_webview_close(w, tab_id))
+        except Exception:
+            pass
+        try:
+            wv.connect("web-process-terminated", lambda w, r: self._on_web_process_terminated(w, r, tab_id))
+        except Exception:
+            pass
+        try:
+            wv.connect("web-process-crashed", lambda w: self._on_web_process_crashed(w, tab_id))
+        except Exception:
+            pass
 
         container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         container.set_hexpand(True)
