@@ -72,6 +72,23 @@ class TestZoomPersistence(unittest.TestCase):
             reloaded = load_config()
             reloaded_tabs = {t["id"]: t for t in reloaded["tabs"]}
             self.assertAlmostEqual(reloaded_tabs["tab-test-1"]["zoomLevel"], 1.40)
+
+            # 2. Szimuláljuk a sync_all_views fül-normalizálását
+            sync_normalized = []
+            for idx, t in enumerate(reloaded.get("tabs", [])):
+                z = float(t.get("zoomLevel", 1.0))
+                sync_normalized.append({
+                    "id": t.get("id"),
+                    "title": t.get("title"),
+                    "zoomLevel": round(z, 2)
+                })
+            reloaded["tabs"] = sync_normalized
+            save_config(reloaded)
+
+            # Újratöltés után a zoom értéknek meg kell maradnia (nem állhat vissza 1.0-ra)
+            reloaded_again = load_config()
+            again_tabs = {t["id"]: t for t in reloaded_again["tabs"]}
+            self.assertAlmostEqual(again_tabs["tab-test-1"]["zoomLevel"], 1.40)
         finally:
             tc.CONFIG_PATH = orig_path
             if os.path.exists(tf_path):

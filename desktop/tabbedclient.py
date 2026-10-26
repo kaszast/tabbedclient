@@ -673,6 +673,7 @@ class TabbedClientWindow(Gtk.Window):
         self.update_tray_menu()
 
     def quit_application(self):
+        self._flush_config_save()
         Gtk.main_quit()
 
     def _apply_sidebar_width(self, collapsed: bool):
@@ -853,14 +854,7 @@ class TabbedClientWindow(Gtk.Window):
             self.sync_all_views()
 
     def on_window_delete(self, widget, event):
-        if hasattr(self, "_config_save_timer") and self._config_save_timer:
-            try:
-                GLib.source_remove(self._config_save_timer)
-            except Exception:
-                pass
-            self._config_save_timer = None
-            save_config(self.config)
-
+        self._flush_config_save()
         settings = self.config.get("settings", {})
         minimize_tray = settings.get("minimizeToTrayOnClose", True)
         if minimize_tray and self.tray is not None:
@@ -1169,6 +1163,15 @@ class TabbedClientWindow(Gtk.Window):
 
         return False
 
+    def _flush_config_save(self):
+        if hasattr(self, "_config_save_timer") and self._config_save_timer:
+            try:
+                GLib.source_remove(self._config_save_timer)
+            except Exception:
+                pass
+            self._config_save_timer = None
+        save_config(self.config)
+
     def _schedule_config_save(self):
         if hasattr(self, "_config_save_timer") and self._config_save_timer:
             try:
@@ -1187,13 +1190,17 @@ class TabbedClientWindow(Gtk.Window):
             if wv == webview:
                 tab_id = tid
                 break
-        if tab_id:
+        if not tab_id:
+            tab_id = self.config.get("activeTabId")
+        if tab_id and tab_id != "home":
             self._save_tab_zoom(tab_id, zoom_level)
 
     def _save_tab_zoom(self, tab_id: str, zoom_level: float):
         target_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
         if target_tab:
-            target_tab["zoomLevel"] = round(float(zoom_level), 2)
+            rounded_zoom = round(float(zoom_level), 2)
+            rounded_zoom = max(0.25, min(5.0, rounded_zoom))
+            target_tab["zoomLevel"] = rounded_zoom
             self._schedule_config_save()
 
     def _on_webview_scroll(self, webview, event):
@@ -1610,6 +1617,9 @@ class TabbedClientWindow(Gtk.Window):
             notifications_enabled = bool(t.get("notificationsEnabled", True))
             unread_count = int(t.get("unreadCount", 0))
             order = int(t.get("order", idx))
+            zoom_lvl = float(t.get("zoomLevel", 1.0))
+            if zoom_lvl < 0.25 or zoom_lvl > 5.0:
+                zoom_lvl = 1.0
             normalized_tabs.append({
                 "id": t.get("id"),
                 "title": title,
@@ -1622,7 +1632,8 @@ class TabbedClientWindow(Gtk.Window):
                 "unreadCount": unread_count,
                 "order": order,
                 "favicon": t.get("favicon") or "",
-                "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url)
+                "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url),
+                "zoomLevel": round(zoom_lvl, 2)
             })
         self.config["tabs"] = normalized_tabs
 
@@ -1649,6 +1660,7 @@ class TabbedClientWindow(Gtk.Window):
         self.update_tray_menu()
 
     def switch_to_tab(self, tab_id: str):
+        self._flush_config_save()
         if not tab_id or tab_id == "home":
             self.config["activeTabId"] = None
             self.current_welcome_view = "dashboard"
