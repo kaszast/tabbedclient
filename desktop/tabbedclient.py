@@ -8,6 +8,7 @@ import atexit
 import base64
 import io
 import json
+import mimetypes
 import os
 import re
 import socket
@@ -994,49 +995,89 @@ class TabbedClientWindow(Gtk.Window):
                 save_config(self.config)
                 self.sync_all_views()
 
-    def open_external_uri(self, uri: str):
+    def open_external_uri(self, uri: str, in_background: bool = False):
         if not uri:
             return
         real_uri = extract_real_target_url(uri)
         if not real_uri or real_uri.startswith("about:") or real_uri.startswith("javascript:"):
             return
 
-        print(f"[TabbedClient] Külső link megnyitása alapértelmezett böngészőben: {real_uri}")
+        print(f"[TabbedClient] Külső link megnyitása alapértelmezett böngészőben: {real_uri} (háttérben: {in_background})")
+
+        launched = False
 
         # 1. GIO AppInfo (modern Freedesktop / GNOME / Zorin OS szabvány)
         try:
             if hasattr(Gio.AppInfo, "launch_default_for_uri"):
-                if Gio.AppInfo.launch_default_for_uri(real_uri, None):
-                    return
+                launched = bool(Gio.AppInfo.launch_default_for_uri(real_uri, None))
         except Exception as e:
             print(f"[Open External URI Gio Warning] {e}", file=sys.stderr)
 
         # 2. Közvetlen xdg-open parancs (Linux asztali környezetek)
-        try:
-            subprocess.Popen(["xdg-open", real_uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return
-        except Exception:
-            pass
+        if not launched:
+            try:
+                subprocess.Popen(["xdg-open", real_uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                launched = True
+            except Exception:
+                pass
 
         # 3. Python webbrowser modul (minden platform)
-        try:
-            import webbrowser
-            if webbrowser.open(real_uri):
-                return
-        except Exception as e:
-            print(f"[Open External URI Webbrowser Warning] {e}", file=sys.stderr)
+        if not launched:
+            try:
+                import webbrowser
+                launched = bool(webbrowser.open(real_uri))
+            except Exception as e:
+                print(f"[Open External URI Webbrowser Warning] {e}", file=sys.stderr)
 
         # 4. Gtk.show_uri fallback
+        if not launched:
+            try:
+                time = Gtk.get_current_event_time() or Gdk.CURRENT_TIME
+                if hasattr(Gtk, "show_uri_on_window") and self.get_window():
+                    Gtk.show_uri_on_window(self, real_uri, time)
+                    launched = True
+                elif hasattr(Gtk, "show_uri") and hasattr(self, "get_screen") and self.get_screen():
+                    Gtk.show_uri(self.get_screen(), real_uri, time)
+                    launched = True
+            except Exception:
+                pass
+
+        # Ha háttérben kérték: megerősítjük és visszaállítjuk a TabbedClient fókuszát
+        if in_background:
+            self._keep_window_focused()
+
+    def _keep_window_focused(self):
+        """Garantálja, hogy a külső böngésző a háttérben nyíljon meg, a fókusz a TabbedClient ablakon marad."""
+        def _refocus():
+            try:
+                cur_time = Gtk.get_current_event_time() or Gdk.CURRENT_TIME
+                self.present_with_time(cur_time)
+                win = self.get_window()
+                if win:
+                    win.focus(cur_time)
+                active_id, wv = self._get_active_tab_id_and_webview()
+                if wv and hasattr(wv, "grab_focus"):
+                    wv.grab_focus()
+            except Exception:
+                pass
+            return False
+
+        _refocus()
+        GLib.idle_add(_refocus)
+        GLib.timeout_add(100, _refocus)
+        GLib.timeout_add(250, _refocus)
+        GLib.timeout_add(500, _refocus)
+
+    def _on_bg_link_message(self, ucm, js_result):
+        """Kezeli a weboldal DOM-jából Ctrl+bal klikk vagy középső egérgombbal küldött háttérlink-üzeneteket."""
         try:
-            time = Gtk.get_current_event_time() or Gdk.CURRENT_TIME
-            if hasattr(Gtk, "show_uri_on_window") and self.get_window():
-                Gtk.show_uri_on_window(self, real_uri, time)
-                return
-            elif hasattr(Gtk, "show_uri") and hasattr(self, "get_screen") and self.get_screen():
-                Gtk.show_uri(self.get_screen(), real_uri, time)
-                return
-        except Exception:
-            pass
+            val = js_result.get_js_value()
+            if val and val.is_string():
+                url = val.to_string().strip()
+                if url:
+                    self.open_external_uri(url, in_background=True)
+        except Exception as e:
+            print(f"[Bg Link Error] {e}", file=sys.stderr)
 
     def _on_welcome_decide_policy(self, webview, decision, decision_type):
         if decision_type in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
@@ -1055,6 +1096,10 @@ class TabbedClientWindow(Gtk.Window):
         req = navigation_action.get_request() if navigation_action else None
         uri = req.get_uri() if req else None
 
+        modifiers = navigation_action.get_modifiers() if navigation_action else 0
+        ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
+        mouse_btn = navigation_action.get_mouse_button() if navigation_action else 0
+
         # Ha nem felhasználói gesztus indította (pl. háttérben futó script, automata popup vagy Meta MAW proxy)
         if not is_gesture:
             return None
@@ -1064,6 +1109,11 @@ class TabbedClientWindow(Gtk.Window):
 
         if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
             real_url = extract_real_target_url(uri)
+            # Ctrl+bal klikk vagy középső egérgomb: mindig háttérben külső böngészőben nyílik!
+            if ctrl_pressed or mouse_btn == 2:
+                self.open_external_uri(real_url, in_background=True)
+                return None
+
             if is_auth_or_login_url(real_url):
                 # OAuth / azonosítási folyamat a fülön belül folytatódik
                 webview.load_uri(real_url)
@@ -1084,9 +1134,14 @@ class TabbedClientWindow(Gtk.Window):
                     na = decision.get_navigation_action()
                     r = na.get_request() if na else None
                     u = r.get_uri() if r else None
+                    temp_mods = na.get_modifiers() if na else 0
+                    temp_ctrl = bool(temp_mods & Gdk.ModifierType.CONTROL_MASK) or ctrl_pressed
+                    temp_mouse = na.get_mouse_button() if na else mouse_btn
                     if u and not u.startswith("about:") and not u.startswith("javascript:"):
                         real_u = extract_real_target_url(u)
-                        if is_auth_or_login_url(real_u):
+                        if temp_ctrl or temp_mouse == 2:
+                            self.open_external_uri(real_u, in_background=True)
+                        elif is_auth_or_login_url(real_u):
                             webview.load_uri(real_u)
                         else:
                             curr_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
@@ -1117,9 +1172,15 @@ class TabbedClientWindow(Gtk.Window):
             is_gesture = nav_action.is_user_gesture() if nav_action else False
             req = nav_action.get_request() if nav_action else None
             uri = req.get_uri() if req else None
+            modifiers = nav_action.get_modifiers() if nav_action else 0
+            ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
+            mouse_btn = nav_action.get_mouse_button() if nav_action else 0
+
             if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
                 real_url = extract_real_target_url(uri)
-                if is_auth_or_login_url(real_url):
+                if ctrl_pressed or mouse_btn == 2:
+                    self.open_external_uri(real_url, in_background=True)
+                elif is_auth_or_login_url(real_url):
                     webview.load_uri(real_url)
                 elif is_gesture:
                     if is_external_link(tab_url, real_url):
@@ -1146,9 +1207,9 @@ class TabbedClientWindow(Gtk.Window):
             if not uri or uri.startswith("about:") or uri.startswith("javascript:"):
                 return False
 
-            # Középső egérgomb vagy Ctrl + bal klikk mindig külső böngészőben nyílik
+            # Középső egérgomb vagy Ctrl + bal klikk mindig külső böngészőben, háttérben nyílik
             if mouse_btn == 2 or ctrl_pressed:
-                self.open_external_uri(uri)
+                self.open_external_uri(uri, in_background=True)
                 decision.ignore()
                 return True
 
@@ -1229,8 +1290,144 @@ class TabbedClientWindow(Gtk.Window):
 
         return False
 
+    def _get_clipboard_image_or_file_data(self) -> dict | None:
+        """Kiolvassa a vágólapról a képadatot (közvetlen kép vagy fájl-URI kép/dokumentum formátumban)."""
+        try:
+            clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        except Exception:
+            return None
+
+        # 1. Közvetlen kép a vágólapon (böngészőből másolt kép, képernyőmentés Flameshot/GNOME eszközből)
+        try:
+            if clipboard.wait_is_image_available():
+                pixbuf = clipboard.wait_for_image()
+                if pixbuf:
+                    ok, buffer = pixbuf.save_to_bufferv("png", [], [])
+                    if ok and buffer:
+                        return {
+                            "type": "image/png",
+                            "filename": "pasted_image.png",
+                            "data": base64.b64encode(buffer).decode("ascii")
+                        }
+        except Exception as e:
+            print(f"[Clipboard Image Warning] {e}", file=sys.stderr)
+
+        # 2. Fájl-URI-k a vágólapon (pl. fájlkezelőből - Nautilus, Nemo, Thunar stb. - kimásolt fájl)
+        try:
+            uris = clipboard.wait_for_uris()
+            if uris:
+                for uri in uris:
+                    filepath = None
+                    try:
+                        filepath, _ = GLib.filename_from_uri(uri)
+                    except Exception:
+                        if uri.startswith("file://"):
+                            filepath = urllib.parse.unquote(uri[7:])
+
+                    if filepath and os.path.isfile(filepath):
+                        mime_type, _ = mimetypes.guess_type(filepath)
+                        ext = os.path.splitext(filepath)[1].lower()
+                        if not mime_type:
+                            if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'):
+                                mime_type = f"image/{ext.replace('.', '')}"
+                            elif ext in ('.pdf',):
+                                mime_type = "application/pdf"
+                            else:
+                                mime_type = "application/octet-stream"
+
+                        try:
+                            with open(filepath, "rb") as f:
+                                file_bytes = f.read()
+                            if file_bytes:
+                                return {
+                                    "type": mime_type,
+                                    "filename": os.path.basename(filepath),
+                                    "data": base64.b64encode(file_bytes).decode("ascii")
+                                }
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"[Clipboard URI Warning] {e}", file=sys.stderr)
+
+        return None
+
+    def _inject_clipboard_file_to_webview(self, webview, file_info: dict):
+        """Szintetikus ClipboardEvent('paste') és DragEvent('drop') eseményeket vált ki a weboldalon a fájl csatolásához."""
+        data_b64 = file_info.get("data", "")
+        mime_type = file_info.get("type", "image/png")
+        filename = file_info.get("filename", "pasted_image.png")
+
+        js_code = f"""
+(function() {{
+    try {{
+        var b64Data = "{data_b64}";
+        var mime = "{mime_type}";
+        var fname = "{filename}";
+
+        var binStr = atob(b64Data);
+        var len = binStr.length;
+        var bytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) {{
+            bytes[i] = binStr.charCodeAt(i);
+        }}
+        var blob = new Blob([bytes], {{ type: mime }});
+        var file = new File([blob], fname, {{ type: mime, lastModified: Date.now() }});
+
+        var dt = new DataTransfer();
+        dt.items.add(file);
+
+        var active = document.activeElement || document.body;
+        if (active && active.tagName === 'IFRAME') {{
+            try {{
+                var doc = active.contentDocument || active.contentWindow.document;
+                if (doc && doc.activeElement) active = doc.activeElement;
+            }} catch(e) {{}}
+        }}
+
+        // 1. Szintetikus paste esemény (Messenger, Gmail, Slack, Telegram Web ezt preferálja)
+        var pasteEvt = new ClipboardEvent('paste', {{
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clipboardData: dt
+        }});
+        active.dispatchEvent(pasteEvt);
+
+        // 2. Ha a webapp drop eseményre támaszkodik vagy nem preventDefault-ozta
+        if (!pasteEvt.defaultPrevented) {{
+            var dropEvt = new DragEvent('drop', {{
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                dataTransfer: dt
+            }});
+            active.dispatchEvent(dropEvt);
+        }}
+        return true;
+    }} catch(err) {{
+        console.error('[TabbedClient Paste Injection Error]', err);
+        return false;
+    }}
+}})();
+"""
+        try:
+            webview.run_javascript(js_code, None, None, None)
+        except Exception as err:
+            print(f"[WebView Paste Injection Warning] {err}", file=sys.stderr)
+
+    def _on_webview_key_press(self, webview, event, tab_id: str):
+        is_ctrl_v = bool(event.state & Gdk.ModifierType.CONTROL_MASK) and event.keyval in (Gdk.KEY_v, Gdk.KEY_V)
+        is_shift_ins = bool(event.state & Gdk.ModifierType.SHIFT_MASK) and event.keyval in (Gdk.KEY_Insert, Gdk.KEY_KP_Insert)
+
+        if is_ctrl_v or is_shift_ins:
+            clip_data = self._get_clipboard_image_or_file_data()
+            if clip_data:
+                self._inject_clipboard_file_to_webview(webview, clip_data)
+                return True
+        return False
+
     def _on_window_key_press(self, widget, event):
-        """Kezeli a billentyűzet-alapú nagyítást: Ctrl+, Ctrl-, Ctrl0."""
+        """Kezeli a billentyűzet-alapú nagyítást: Ctrl+, Ctrl-, Ctrl0 és a vágólap kép/fájl beillesztést."""
         if bool(event.state & Gdk.ModifierType.CONTROL_MASK):
             keyval = event.keyval
             if keyval in (Gdk.KEY_plus, Gdk.KEY_equal, Gdk.KEY_KP_Add):
@@ -1242,6 +1439,21 @@ class TabbedClientWindow(Gtk.Window):
             elif keyval in (Gdk.KEY_0, Gdk.KEY_KP_0):
                 self._reset_active_zoom()
                 return True
+            elif keyval in (Gdk.KEY_v, Gdk.KEY_V):
+                active_id, wv = self._get_active_tab_id_and_webview()
+                if wv and active_id != "welcome":
+                    clip_data = self._get_clipboard_image_or_file_data()
+                    if clip_data:
+                        self._inject_clipboard_file_to_webview(wv, clip_data)
+                        return True
+        elif bool(event.state & Gdk.ModifierType.SHIFT_MASK):
+            if event.keyval in (Gdk.KEY_Insert, Gdk.KEY_KP_Insert):
+                active_id, wv = self._get_active_tab_id_and_webview()
+                if wv and active_id != "welcome":
+                    clip_data = self._get_clipboard_image_or_file_data()
+                    if clip_data:
+                        self._inject_clipboard_file_to_webview(wv, clip_data)
+                        return True
         return False
 
     def _get_active_tab_id_and_webview(self):
@@ -1315,6 +1527,10 @@ class TabbedClientWindow(Gtk.Window):
         wv_settings.set_enable_media_stream(True)
         wv_settings.set_enable_smooth_scrolling(True)
         wv_settings.set_javascript_can_access_clipboard(True)
+        wv_settings.set_allow_file_access_from_file_urls(True)
+        wv_settings.set_allow_universal_access_from_file_urls(True)
+        if hasattr(wv_settings, "set_allow_top_navigation_to_data_urls"):
+            wv_settings.set_allow_top_navigation_to_data_urls(True)
         if hasattr(wv_settings, "set_zoom_text_only"):
             wv_settings.set_zoom_text_only(False)
         if hasattr(wv_settings, "set_enable_page_cache"):
@@ -1342,13 +1558,62 @@ class TabbedClientWindow(Gtk.Window):
         wv.set_vexpand(True)
         wv.set_background_color(Gdk.RGBA(0.059, 0.067, 0.082, 1.0))
 
-        # Nagyítás és kicsinyítés kezelése (Ctrl + egérgörgő)
-        wv.add_events(Gdk.EventMask.SCROLL_MASK | Gdk.EventMask.SMOOTH_SCROLL_MASK)
+        # Nagyítás és billentyűzetkezelés (Ctrl + egérgörgő, Ctrl + V képbeillesztés)
+        wv.add_events(
+            Gdk.EventMask.SCROLL_MASK
+            | Gdk.EventMask.SMOOTH_SCROLL_MASK
+            | Gdk.EventMask.KEY_PRESS_MASK
+            | Gdk.EventMask.KEY_RELEASE_MASK
+        )
         wv.connect("scroll-event", self._on_webview_scroll)
+        wv.connect("key-press-event", self._on_webview_key_press, tab_id)
         saved_zoom = float(tab.get("zoomLevel", 1.0))
         if saved_zoom < 0.25 or saved_zoom > 5.0:
             saved_zoom = 1.0
         wv.set_zoom_level(saved_zoom)
+
+        # DOM szintű híd: háttérlink-megnyitás (Ctrl+klikk) és Drag & Drop segítő
+        try:
+            ucm = wv.get_user_content_manager()
+            ucm.register_script_message_handler("tabbedclient_bg_link")
+            ucm.connect("script-message-received::tabbedclient_bg_link", self._on_bg_link_message)
+
+            bg_and_dnd_script = (
+                "(function() {"
+                "  if (window.__tabbedclient_helpers_installed) return;"
+                "  window.__tabbedclient_helpers_installed = true;"
+                "  document.addEventListener('click', function(e) {"
+                "    var isCtrlOrMiddle = (e.ctrlKey || e.metaKey || e.button === 1);"
+                "    if (!isCtrlOrMiddle || e.button === 2) return;"
+                "    var a = e.target.closest('a');"
+                "    if (a && a.href && !a.href.startsWith('javascript:') && !a.href.startsWith('about:')) {"
+                "      e.preventDefault();"
+                "      e.stopPropagation();"
+                "      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tabbedclient_bg_link) {"
+                "        window.webkit.messageHandlers.tabbedclient_bg_link.postMessage(a.href);"
+                "      }"
+                "    }"
+                "  }, true);"
+                "  document.addEventListener('dragover', function(e) {"
+                "    if (e.dataTransfer) {"
+                "      var types = e.dataTransfer.types;"
+                "      if (types && (types.includes('Files') || types.includes('text/uri-list') || types.includes('application/x-moz-file'))) {"
+                "        e.dataTransfer.dropEffect = 'copy';"
+                "      }"
+                "    }"
+                "  }, false);"
+                "})();"
+            )
+            user_script = WebKit2.UserScript.new(
+                bg_and_dnd_script,
+                WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+                WebKit2.UserScriptInjectionTime.START,
+                None,
+                None
+            )
+            ucm.add_script(user_script)
+        except Exception as e:
+            print(f"[Tab UserContentManager Init Warning] {e}", file=sys.stderr)
 
         # Biztonságos jogosultságkezelés és értesítési híd
         wv.connect("permission-request", lambda w, r: self._on_permission_request(w, r, tab_id))
