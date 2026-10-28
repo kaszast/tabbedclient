@@ -185,7 +185,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -396,7 +396,7 @@ def load_config():
             with open(target_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    cfg["version"] = data.get("version", "1.0.0")
+                    cfg["version"] = data.get("version", "1.1.0")
                     if isinstance(data.get("settings"), dict):
                         cfg["settings"].update(data["settings"])
                     if isinstance(data.get("profiles"), list) and len(data["profiles"]) > 0:
@@ -2159,7 +2159,7 @@ class TabbedClientWindow(Gtk.Window):
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.0.0"),
+            "version": self.config.get("version", "1.1.0"),
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",

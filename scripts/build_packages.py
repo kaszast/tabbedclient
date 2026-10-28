@@ -15,7 +15,24 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST_DIR = os.path.join(BASE_DIR, "dist")
 BUILD_TMP = os.path.join(DIST_DIR, "build_tmp")
 
-VERSION = "1.0.0"
+
+def get_project_version() -> str:
+    """Kiolvassa a verziószámot a package.json-ból, szinkronban tartva az építőszkripteket."""
+    pkg_path = os.path.join(BASE_DIR, "package.json")
+    if os.path.exists(pkg_path):
+        try:
+            with open(pkg_path, "r", encoding="utf-8") as f:
+                import json
+                data = json.load(f)
+                v = data.get("version")
+                if v:
+                    return str(v).strip()
+        except Exception:
+            pass
+    return "1.1.0"
+
+
+VERSION = get_project_version()
 
 
 def clean_dir(path):
