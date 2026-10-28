@@ -398,7 +398,10 @@
   <!-- 1. KEZDŐLAP / IRÁNYÍTÓPULT NÉZET -->
   <div class="card" id="view-dashboard">
     <div class="card-header">
-      <h1>TabbedClient — Kezdőlap</h1>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h1>TabbedClient — Kezdőlap</h1>
+        <span id="dashboard-version-badge" class="app-version-tag" style="font-size:11px; font-weight:700; color:var(--accent); background:var(--bg-main); padding:3px 9px; border-radius:12px; border:1px solid var(--border); letter-spacing:0.3px;">v1.1.1</span>
+      </div>
       <span id="dashboard-theme-badge" style="font-size:12px; color:var(--text-muted);">Téma: Slate</span>
     </div>
     <p class="subtitle">
@@ -878,6 +881,10 @@
 
     window.syncFromBackend = function(state) {
       if (!state) return;
+      if (state.version) {
+        const verBadge = document.getElementById('dashboard-version-badge');
+        if (verBadge) verBadge.textContent = 'v' + state.version;
+      }
       const theme = state.theme || (state.settings && state.settings.theme) || 'slate';
       applyThemeClass(theme);
       if (Array.isArray(state.tabs)) currentState.tabs = state.tabs;

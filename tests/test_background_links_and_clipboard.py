@@ -108,6 +108,21 @@ class TestBackgroundLinksAndClipboard(unittest.TestCase):
         self.assertIn("ClipboardEvent('paste'", js_arg)
         self.assertIn("DragEvent('drop'", js_arg)
 
+    def test_permissions_device_info_and_user_media_allowed(self):
+        """Teszteli, hogy a DeviceInfo és UserMedia kérések automatikusan engedélyezettek a Gmail hívási hiba megelőzésére."""
+        from gi.repository import WebKit2
+        if hasattr(WebKit2, 'DeviceInfoPermissionRequest'):
+            mock_dev_req = MagicMock(spec=WebKit2.DeviceInfoPermissionRequest)
+            res = self.app._on_permission_request(None, mock_dev_req, "tab-gmail")
+            self.assertTrue(res)
+            mock_dev_req.allow.assert_called_once()
+
+        if hasattr(WebKit2, 'UserMediaPermissionRequest'):
+            mock_media_req = MagicMock(spec=WebKit2.UserMediaPermissionRequest)
+            res = self.app._on_permission_request(None, mock_media_req, "tab-gmail")
+            self.assertTrue(res)
+            mock_media_req.allow.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -185,7 +185,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.1.0",
+    "version": "1.1.1",
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -396,7 +396,7 @@ def load_config():
             with open(target_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    cfg["version"] = data.get("version", "1.1.0")
+                    cfg["version"] = data.get("version", "1.1.1")
                     if isinstance(data.get("settings"), dict):
                         cfg["settings"].update(data["settings"])
                     if isinstance(data.get("profiles"), list) and len(data["profiles"]) > 0:
@@ -1080,30 +1080,27 @@ class TabbedClientWindow(Gtk.Window):
                 request.allow()
             return True
 
-        # 2. Médiaeszközök (mikrofon / kamera): megerősítés kérése
-        if hasattr(WebKit2, 'UserMediaPermissionRequest') and isinstance(request, WebKit2.UserMediaPermissionRequest):
-            tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
-            name = tab.get("title") or tab.get("name") or "A weboldal" if tab else "A weboldal"
-            dialog = Gtk.MessageDialog(
-                transient_for=self,
-                flags=Gtk.DialogFlags.MODAL | Gtk.DialogFlags.DESTROY_WITH_PARENT,
-                message_type=Gtk.MessageType.QUESTION,
-                buttons=Gtk.ButtonsType.NONE,
-                text=f"{name} hozzáférést kér a mikrofonhoz / kamerához."
-            )
-            dialog.format_secondary_text("Engedélyezed a médiaeszközök használatát ehhez a szolgáltatáshoz?")
-            dialog.add_button("Tiltás", Gtk.ResponseType.NO)
-            dialog.add_button("Engedélyezés", Gtk.ResponseType.YES)
-            dialog.set_default_response(Gtk.ResponseType.NO)
-            response = dialog.run()
-            dialog.destroy()
-            if response == Gtk.ResponseType.YES:
-                request.allow()
-            else:
-                request.deny()
+        # 2. Eszközinformációk lekérdezése (hangszóró/mikrofon/kamera lista - elengedhetetlen a Gmail Meet / Chat hívásokhoz)
+        if hasattr(WebKit2, 'DeviceInfoPermissionRequest') and isinstance(request, WebKit2.DeviceInfoPermissionRequest):
+            request.allow()
             return True
 
-        # 3. Egyéb jogosultságok (pl. Geolocation): alapértelmezett védelem
+        # 3. Médiaeszközök (mikrofon / kamera aktív használata a kommunikációs szolgáltatásokban)
+        if hasattr(WebKit2, 'UserMediaPermissionRequest') and isinstance(request, WebKit2.UserMediaPermissionRequest):
+            request.allow()
+            return True
+
+        # 4. DRM és Média kulcsrendszer engedélyezése (védett hang/videó lejátszás)
+        if hasattr(WebKit2, 'MediaKeySystemPermissionRequest') and isinstance(request, WebKit2.MediaKeySystemPermissionRequest):
+            request.allow()
+            return True
+
+        # 5. Vágólap hozzáférés engedélyezése
+        if hasattr(WebKit2, 'ClipboardPermissionRequest') and isinstance(request, WebKit2.ClipboardPermissionRequest):
+            request.allow()
+            return True
+
+        # 6. Egyéb jogosultságok (pl. Geolocation): alapértelmezett védelem
         request.deny()
         return True
 
@@ -1725,6 +1722,10 @@ class TabbedClientWindow(Gtk.Window):
         wv_settings.set_enable_javascript(True)
         wv_settings.set_enable_webaudio(True)
         wv_settings.set_enable_media_stream(True)
+        if hasattr(wv_settings, "set_enable_webrtc"):
+            wv_settings.set_enable_webrtc(True)
+        if hasattr(wv_settings, "set_media_playback_requires_user_gesture"):
+            wv_settings.set_media_playback_requires_user_gesture(False)
         wv_settings.set_enable_smooth_scrolling(True)
         wv_settings.set_javascript_can_access_clipboard(True)
         wv_settings.set_allow_file_access_from_file_urls(True)
@@ -2159,7 +2160,7 @@ class TabbedClientWindow(Gtk.Window):
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.1.0"),
+            "version": self.config.get("version", "1.1.1"),
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",
