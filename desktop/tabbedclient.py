@@ -566,6 +566,13 @@ class TabbedClientWindow(Gtk.Window):
         self.tray = None
         self.tray_menu = None
 
+        try:
+            default_ctx = WebKit2.WebContext.get_default()
+            if default_ctx:
+                default_ctx.connect("download-started", self._on_download_started)
+        except Exception as e:
+            print(f"[Default WebContext Download Warning] {e}", file=sys.stderr)
+
         self.setup_ui()
         self.setup_tray()
 
@@ -897,8 +904,156 @@ class TabbedClientWindow(Gtk.Window):
         )
         cookie_manager.set_accept_policy(WebKit2.CookieAcceptPolicy.NO_THIRD_PARTY)
 
+        try:
+            context.connect("download-started", self._on_download_started)
+        except Exception as e:
+            print(f"[Profile Context Download Warning] {e}", file=sys.stderr)
+
         self.contexts[profile_id] = context
         return context
+
+    @staticmethod
+    def get_download_dir() -> str:
+        """Visszaadja a felhasználó letöltési könyvtárát (XDG vagy ~/Letöltések / ~/Downloads)."""
+        dl_dir = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+        if dl_dir and os.path.isdir(dl_dir):
+            return dl_dir
+        home = os.path.expanduser("~")
+        for candidate in ["Letöltések", "Downloads"]:
+            p = os.path.join(home, candidate)
+            if os.path.isdir(p):
+                return p
+        default_dir = os.path.join(home, "Letöltések")
+        try:
+            os.makedirs(default_dir, exist_ok=True)
+            return default_dir
+        except Exception:
+            return home
+
+    @staticmethod
+    def _sanitize_filename(filename: str) -> str:
+        if not filename:
+            return "download"
+        filename = urllib.parse.unquote(filename)
+        filename = os.path.basename(filename.replace("\\", "/")).strip()
+        filename = re.sub(r'[/*?:"<>|]', '_', filename)
+        if not filename or filename in ('.', '..'):
+            filename = "download"
+        return filename
+
+    @staticmethod
+    def _get_unique_filepath(directory: str, filename: str) -> str:
+        base, ext = os.path.splitext(filename)
+        dest_path = os.path.join(directory, filename)
+        counter = 1
+        while os.path.exists(dest_path):
+            dest_path = os.path.join(directory, f"{base} ({counter}){ext}")
+            counter += 1
+        return dest_path
+
+    def _show_download_notification(self, title: str, body: str, filepath: str = ""):
+        if Notify and Notify.is_initted():
+            try:
+                notif = Notify.Notification.new(title, body, "document-save")
+                notif.show()
+            except Exception as err:
+                print(f"[Download Notify Error] {err}", file=sys.stderr)
+
+    def _on_download_started(self, context_or_view, download: WebKit2.Download):
+        """Kezeli a WebKit által indított letöltéseket (csatolmányok, képek, fájlok)."""
+        print("[TabbedClient] Letöltés kezdeményezve...")
+        try:
+            download.connect("decide-destination", self._on_download_decide_destination)
+            download.connect("finished", self._on_download_finished)
+            download.connect("failed", self._on_download_failed)
+        except Exception as err:
+            print(f"[Download Connect Warning] {err}", file=sys.stderr)
+
+    def _on_download_decide_destination(self, download: WebKit2.Download, suggested_filename: str) -> bool:
+        dl_dir = self.get_download_dir()
+        if not suggested_filename:
+            resp = download.get_response() if hasattr(download, "get_response") else None
+            if resp and hasattr(resp, "get_suggested_filename"):
+                suggested_filename = resp.get_suggested_filename()
+        if not suggested_filename:
+            req = download.get_request() if hasattr(download, "get_request") else None
+            uri = req.get_uri() if req else ""
+            suggested_filename = os.path.basename(urllib.parse.urlparse(uri).path) or "download"
+
+        clean_name = self._sanitize_filename(suggested_filename)
+        dest_path = self._get_unique_filepath(dl_dir, clean_name)
+        dest_uri = GLib.filename_to_uri(dest_path)
+
+        download.set_destination(dest_uri)
+        download.set_allow_overwrite(False)
+        print(f"[TabbedClient] Letöltési cél meghatározva: {dest_path}")
+        return True
+
+    def _on_download_finished(self, download: WebKit2.Download):
+        dest = download.get_destination() if hasattr(download, "get_destination") else None
+        filepath = ""
+        if dest:
+            try:
+                filepath, _ = GLib.filename_from_uri(dest)
+            except Exception:
+                filepath = dest.replace("file://", "")
+        filename = os.path.basename(filepath) if filepath else "Fájl"
+        print(f"[TabbedClient] Letöltés sikeresen befejeződött: {filepath}")
+        self._show_download_notification(
+            title="Letöltés kész",
+            body=f"{filename} mentve a Letöltések mappába.",
+            filepath=filepath
+        )
+
+    def _on_download_failed(self, download: WebKit2.Download, error):
+        print(f"[TabbedClient Letöltési Hiba] {error}", file=sys.stderr)
+        self._show_download_notification(
+            title="Letöltési hiba",
+            body=f"A letöltés meghiúsult: {error}",
+            filepath=""
+        )
+
+    def _on_blob_download_message(self, ucm, js_result):
+        """Kezeli a JavaScript DOM-ból érkező blob/data URL letöltéseket (Messenger, Telegram, Gmail)."""
+        try:
+            val = js_result.get_js_value()
+            if not val or not val.is_string():
+                return
+            raw = val.to_string()
+            payload = json.loads(raw)
+            filename = payload.get("filename") or "download"
+            data_url = payload.get("dataUrl") or ""
+            mime_type = payload.get("mimeType") or ""
+
+            if not data_url or not data_url.startswith("data:"):
+                return
+
+            header, b64data = data_url.split(",", 1)
+            if not mime_type and ";" in header:
+                mime_type = header.split(";")[0].replace("data:", "")
+
+            base, ext = os.path.splitext(filename)
+            if not ext and mime_type:
+                guessed_ext = mimetypes.guess_extension(mime_type)
+                if guessed_ext:
+                    filename = f"{filename}{guessed_ext}"
+
+            clean_filename = self._sanitize_filename(filename)
+            dl_dir = self.get_download_dir()
+            dest_path = self._get_unique_filepath(dl_dir, clean_filename)
+
+            file_bytes = base64.b64decode(b64data)
+            with open(dest_path, "wb") as f:
+                f.write(file_bytes)
+
+            print(f"[TabbedClient] Csatolmány sikeresen lementve: {dest_path}")
+            self._show_download_notification(
+                title="Letöltés kész",
+                body=f"{clean_filename} mentve a Letöltések mappába.",
+                filepath=dest_path
+            )
+        except Exception as e:
+            print(f"[Blob Download Handler Error] {e}", file=sys.stderr)
 
     def _update_tab_favicon(self, tab_id: str, favicon_data: str = None, favicon_url: str = None):
         changed = False
@@ -1109,6 +1264,10 @@ class TabbedClientWindow(Gtk.Window):
 
         if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
             real_url = extract_real_target_url(uri)
+            # Blob URL-ek letöltésként kezelendők, nem weblapként
+            if real_url.startswith("blob:"):
+                return None
+
             # Ctrl+bal klikk vagy középső egérgomb: mindig háttérben külső böngészőben nyílik!
             if ctrl_pressed or mouse_btn == 2:
                 self.open_external_uri(real_url, in_background=True)
@@ -1130,6 +1289,19 @@ class TabbedClientWindow(Gtk.Window):
             temp_wv = WebKit2.WebView.new_with_context(webview.get_context())
 
             def _on_temp_decide_policy(temp_view, decision, decision_type):
+                if decision_type == WebKit2.PolicyDecisionType.RESPONSE:
+                    if hasattr(decision, "is_mime_type_supported") and not decision.is_mime_type_supported():
+                        if hasattr(decision, "download"):
+                            decision.download()
+                        GLib.idle_add(temp_view.destroy)
+                        return True
+                    resp = decision.get_response() if hasattr(decision, "get_response") else None
+                    if resp and hasattr(resp, "get_suggested_filename") and resp.get_suggested_filename():
+                        if hasattr(decision, "download"):
+                            decision.download()
+                        GLib.idle_add(temp_view.destroy)
+                        return True
+
                 if decision_type == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
                     na = decision.get_navigation_action()
                     r = na.get_request() if na else None
@@ -1139,7 +1311,12 @@ class TabbedClientWindow(Gtk.Window):
                     temp_mouse = na.get_mouse_button() if na else mouse_btn
                     if u and not u.startswith("about:") and not u.startswith("javascript:"):
                         real_u = extract_real_target_url(u)
-                        if temp_ctrl or temp_mouse == 2:
+                        if real_u.startswith("blob:"):
+                            if hasattr(decision, "download"):
+                                decision.download()
+                            GLib.idle_add(temp_view.destroy)
+                            return True
+                        elif temp_ctrl or temp_mouse == 2:
                             self.open_external_uri(real_u, in_background=True)
                         elif is_auth_or_login_url(real_u):
                             webview.load_uri(real_u)
@@ -1162,9 +1339,22 @@ class TabbedClientWindow(Gtk.Window):
             return None
 
     def _on_decide_policy(self, webview, decision, decision_type, tab_id: str):
-        """Kezeli a navigációs döntéseket (új ablak, link kattintás, külső domain)."""
+        """Kezeli a navigációs döntéseket (új ablak, link kattintás, külső domain, csatolmány-letöltések)."""
         tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
         tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
+
+        # 0. Válasz (RESPONSE) szintű döntés: csatolmányok, képek és letölthető fájlok kezelése
+        if decision_type == WebKit2.PolicyDecisionType.RESPONSE:
+            if hasattr(decision, "is_mime_type_supported") and not decision.is_mime_type_supported():
+                if hasattr(decision, "download"):
+                    decision.download()
+                    return True
+            resp = decision.get_response() if hasattr(decision, "get_response") else None
+            if resp and hasattr(resp, "get_suggested_filename") and resp.get_suggested_filename():
+                if hasattr(decision, "download"):
+                    decision.download()
+                    return True
+            return False
 
         # 1. Új ablak művelet (pl. link target='_blank' vagy window.open)
         if decision_type == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
@@ -1178,7 +1368,11 @@ class TabbedClientWindow(Gtk.Window):
 
             if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
                 real_url = extract_real_target_url(uri)
-                if ctrl_pressed or mouse_btn == 2:
+                if real_url.startswith("blob:"):
+                    if hasattr(decision, "download"):
+                        decision.download()
+                        return True
+                elif ctrl_pressed or mouse_btn == 2:
                     self.open_external_uri(real_url, in_background=True)
                 elif is_auth_or_login_url(real_url):
                     webview.load_uri(real_url)
@@ -1206,6 +1400,12 @@ class TabbedClientWindow(Gtk.Window):
             uri = req.get_uri() if req else None
             if not uri or uri.startswith("about:") or uri.startswith("javascript:"):
                 return False
+
+            # Blob URL-ek közvetlen letöltése navigáció helyett
+            if uri.startswith("blob:"):
+                if hasattr(decision, "download"):
+                    decision.download()
+                    return True
 
             # Középső egérgomb vagy Ctrl + bal klikk mindig külső böngészőben, háttérben nyílik
             if mouse_btn == 2 or ctrl_pressed:
@@ -1572,11 +1772,13 @@ class TabbedClientWindow(Gtk.Window):
             saved_zoom = 1.0
         wv.set_zoom_level(saved_zoom)
 
-        # DOM szintű híd: háttérlink-megnyitás (Ctrl+klikk) és Drag & Drop segítő
+        # DOM szintű híd: háttérlink-megnyitás (Ctrl+klikk), Drag & Drop és csatolmány-letöltés
         try:
             ucm = wv.get_user_content_manager()
             ucm.register_script_message_handler("tabbedclient_bg_link")
             ucm.connect("script-message-received::tabbedclient_bg_link", self._on_bg_link_message)
+            ucm.register_script_message_handler("tabbedclient_blob_download")
+            ucm.connect("script-message-received::tabbedclient_blob_download", self._on_blob_download_message)
 
             bg_and_dnd_script = (
                 "(function() {"
@@ -1602,6 +1804,53 @@ class TabbedClientWindow(Gtk.Window):
                 "      }"
                 "    }"
                 "  }, false);"
+                "  document.addEventListener('click', function(e) {"
+                "    var a = e.target.closest('a');"
+                "    if (!a) return;"
+                "    var href = a.getAttribute('href') || a.href || '';"
+                "    var hasDownload = a.hasAttribute('download');"
+                "    var isBlobOrData = href.startsWith('blob:') || href.startsWith('data:');"
+                "    if (hasDownload || isBlobOrData) {"
+                "      var filename = a.getAttribute('download') || a.download || '';"
+                "      if (!filename && isBlobOrData) { filename = 'letoltes'; }"
+                "      if (href.startsWith('blob:')) {"
+                "        e.preventDefault();"
+                "        e.stopPropagation();"
+                "        fetch(href)"
+                "          .then(function(res) {"
+                "            var ct = res.headers.get('content-type') || '';"
+                "            return res.blob().then(function(b) { return { blob: b, contentType: ct }; });"
+                "          })"
+                "          .then(function(info) {"
+                "            var reader = new FileReader();"
+                "            reader.onloadend = function() {"
+                "              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tabbedclient_blob_download) {"
+                "                window.webkit.messageHandlers.tabbedclient_blob_download.postMessage(JSON.stringify({"
+                "                  filename: filename,"
+                "                  dataUrl: reader.result,"
+                "                  mimeType: info.contentType"
+                "                }));"
+                "              }"
+                "            };"
+                "            reader.readAsDataURL(info.blob);"
+                "          })"
+                "          .catch(function(err) {"
+                "            console.error('[TabbedClient Blob Download Warning]', err);"
+                "          });"
+                "        return;"
+                "      } else if (href.startsWith('data:')) {"
+                "        e.preventDefault();"
+                "        e.stopPropagation();"
+                "        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tabbedclient_blob_download) {"
+                "          window.webkit.messageHandlers.tabbedclient_blob_download.postMessage(JSON.stringify({"
+                "            filename: filename,"
+                "            dataUrl: href"
+                "          }));"
+                "        }"
+                "        return;"
+                "      }"
+                "    }"
+                "  }, true);"
                 "})();"
             )
             user_script = WebKit2.UserScript.new(
@@ -1614,6 +1863,12 @@ class TabbedClientWindow(Gtk.Window):
             ucm.add_script(user_script)
         except Exception as e:
             print(f"[Tab UserContentManager Init Warning] {e}", file=sys.stderr)
+
+        # Letöltések közvetlen kezelése a WebView-n
+        try:
+            wv.connect("download-started", lambda w, d: self._on_download_started(None, d))
+        except Exception:
+            pass
 
         # Biztonságos jogosultságkezelés és értesítési híd
         wv.connect("permission-request", lambda w, r: self._on_permission_request(w, r, tab_id))
