@@ -185,7 +185,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.1.1",
+    "version": "1.1",
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -213,6 +213,57 @@ def _default_favicon_url(url: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def extract_unread_count(title: str, url: str = "") -> int:
+    """
+    Kinyeri a valós olvasatlan értesítések / üzenetek számát a böngészőfül címéből.
+    Kizárólag megbízható mintákra támaszkodik a hamis pozitívok (pl. levél tárgyában
+    vagy dátumban szereplő zárójeles számok) elkerülése érdekében.
+    """
+    if not title:
+        return 0
+
+    clean = title.strip()
+
+    # 1. Cím legelején lévő zárójeles szám: pl. '(3) Gmail', '[2] Slack', '*(1) Chat', '(99+) WhatsApp'
+    m = re.match(r'^(?:\*\s*)?[\(\[]([0-9]+)\+?[\)\]]', clean)
+    if m:
+        try:
+            val = int(m.group(1))
+            return val if 0 < val <= 9999 else 0
+        except ValueError:
+            pass
+
+    # 2. Levelező/üzenetküldő mappa vagy szolgáltatás neve utáni zárójeles szám:
+    # Pl. 'Gmail — Beérkező levelek (12)', 'Beérkező levelek (3) - Gmail', 'Inbox (5) - Work Mail', 'Beérkezett üzenetek (2)'
+    m = re.search(
+        r'(?:^|[\s—–\-])(?:Inbox|Beérkező levelek|Beérkezett üzenetek|Messages|Üzenetek|Chats|Csevegések)\s*[\(\[]([0-9]+)\+?[\)\]]',
+        clean,
+        re.IGNORECASE,
+    )
+    if m:
+        try:
+            val = int(m.group(1))
+            return val if 0 < val <= 9999 else 0
+        except ValueError:
+            pass
+
+    # 3. Cím legvégén lévő csevegő-alkalmazás számláló:
+    # Pl. 'Telegram (5)', 'Telegram Web (2)', 'Slack (4)'
+    m = re.search(
+        r'(?:Telegram|Slack|Discord|Messenger|WhatsApp|Chat)\s*(?:Web)?\s*[\(\[]([0-9]+)\+?[\)\]]$',
+        clean,
+        re.IGNORECASE,
+    )
+    if m:
+        try:
+            val = int(m.group(1))
+            return val if 0 < val <= 999 else 0
+        except ValueError:
+            pass
+
+    return 0
 
 
 def extract_real_target_url(target_uri: str) -> str:
@@ -396,7 +447,7 @@ def load_config():
             with open(target_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    cfg["version"] = data.get("version", "1.1.1")
+                    cfg["version"] = data.get("version", "1.1")
                     if isinstance(data.get("settings"), dict):
                         cfg["settings"].update(data["settings"])
                     if isinstance(data.get("profiles"), list) and len(data["profiles"]) > 0:
@@ -1115,10 +1166,6 @@ class TabbedClientWindow(Gtk.Window):
 
         is_active = (self.config.get("activeTabId") == tab_id and self.is_visible())
         if not is_active:
-            if tab:
-                tab["unreadCount"] = tab.get("unreadCount", 0) + 1
-                save_config(self.config)
-                self.sync_all_views()
             if Notify and Notify.is_initted():
                 try:
                     notif = Notify.Notification.new(f"[{tab_name}] {title}", body, "dialog-information")
@@ -1133,19 +1180,31 @@ class TabbedClientWindow(Gtk.Window):
         if not tab:
             return
 
-        # Olvasatlan számláló kinyerése a címből (pl. '(3) Gmail' vagy '[2] Slack')
-        m = re.search(r'[\(\[]([0-9]+)\+?[\)\]]', new_title)
-        if m:
-            count = int(m.group(1))
-            if tab.get("unreadCount") != count:
-                tab["unreadCount"] = count
-                save_config(self.config)
-                self.sync_all_views()
-        elif self.config.get("activeTabId") == tab_id:
-            if tab.get("unreadCount", 0) > 0:
-                tab["unreadCount"] = 0
-                save_config(self.config)
-                self.sync_all_views()
+        # Olvasatlan számláló kinyerése a címből megbízható szabályokkal
+        count = extract_unread_count(new_title, tab.get("url", ""))
+        if tab.get("unreadCount", 0) != count:
+            tab["unreadCount"] = count
+            save_config(self.config)
+            self.sync_all_views()
+
+    def _on_unread_message(self, user_content_manager, js_result, tab_id: str):
+        try:
+            val = js_result.get_js_value()
+            if val.is_number():
+                count = int(val.to_double())
+            elif val.is_string():
+                count = int(val.to_string())
+            else:
+                return
+        except Exception:
+            return
+
+        count = max(0, min(count, 9999))
+        tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+        if tab and tab.get("unreadCount", 0) != count:
+            tab["unreadCount"] = count
+            save_config(self.config)
+            self.sync_all_views()
 
     def open_external_uri(self, uri: str, in_background: bool = False):
         if not uri:
@@ -1780,11 +1839,45 @@ class TabbedClientWindow(Gtk.Window):
             ucm.connect("script-message-received::tabbedclient_bg_link", self._on_bg_link_message)
             ucm.register_script_message_handler("tabbedclient_blob_download")
             ucm.connect("script-message-received::tabbedclient_blob_download", self._on_blob_download_message)
+            ucm.register_script_message_handler("tabbedclient_unread")
+            ucm.connect("script-message-received::tabbedclient_unread", lambda mgr, res: self._on_unread_message(mgr, res, tab_id))
 
             bg_and_dnd_script = (
                 "(function() {"
                 "  if (window.__tabbedclient_helpers_installed) return;"
                 "  window.__tabbedclient_helpers_installed = true;"
+                "  function __syncUnreadCount() {"
+                "    try {"
+                "      var count = 0;"
+                "      var title = document.title || '';"
+                "      var m = title.match(/^(?:\\*\\s*)?[\\(\\[]([0-9]+)\\+?[\\)\\]]/) ||"
+                "              title.match(/(?:Inbox|Beérkező levelek|Beérkezett üzenetek|Messages|Üzenetek|Chats|Csevegések)\\s*[\\(\\[]([0-9]+)\\+?[\\)\\]]/i) ||"
+                "              title.match(/(?:Telegram|Slack|Discord|Messenger|WhatsApp|Chat)\\s*(?:Web)?\\s*[\\(\\[]([0-9]+)\\+?[\\)\\]]$/i);"
+                "      if (m && m[1]) {"
+                "        count = parseInt(m[1], 10) || 0;"
+                "      } else {"
+                "        var el = document.querySelector('.bsU, .nav-count');"
+                "        if (el && el.textContent) {"
+                "          var domNum = parseInt(el.textContent.trim(), 10);"
+                "          if (!isNaN(domNum) && domNum >= 0) {"
+                "            count = domNum;"
+                "          }"
+                "        }"
+                "      }"
+                "      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tabbedclient_unread) {"
+                "        window.webkit.messageHandlers.tabbedclient_unread.postMessage(count);"
+                "      }"
+                "    } catch(err) {}"
+                "  }"
+                "  var __titleEl = document.querySelector('title');"
+                "  if (__titleEl) {"
+                "    try {"
+                "      var __obs = new MutationObserver(__syncUnreadCount);"
+                "      __obs.observe(__titleEl, { subtree: true, characterData: true, childList: true });"
+                "    } catch(e) {}"
+                "  }"
+                "  document.addEventListener('DOMContentLoaded', __syncUnreadCount);"
+                "  setInterval(__syncUnreadCount, 4000);"
                 "  document.addEventListener('click', function(e) {"
                 "    var isCtrlOrMiddle = (e.ctrlKey || e.metaKey || e.button === 1);"
                 "    if (!isCtrlOrMiddle || e.button === 2) return;"
@@ -2160,7 +2253,7 @@ class TabbedClientWindow(Gtk.Window):
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.1.1"),
+            "version": self.config.get("version", "1.1"),
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",
@@ -2195,16 +2288,13 @@ class TabbedClientWindow(Gtk.Window):
         if not target_tab:
             return
 
-        # Fülre váltáskor az olvasatlan számláló nullázása
-        if target_tab.get("unreadCount", 0) > 0:
-            target_tab["unreadCount"] = 0
-
         self._ensure_tab_webview(target_tab)
         wv = self.tab_webviews.get(tab_id)
         if wv:
             saved_zoom = float(target_tab.get("zoomLevel", 1.0))
             if abs(wv.get_zoom_level() - saved_zoom) > 0.001:
                 wv.set_zoom_level(saved_zoom)
+            wv.grab_focus()
 
         self.config["activeTabId"] = tab_id
         self.previous_tab_id = tab_id

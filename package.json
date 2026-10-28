@@ -1,13 +1,13 @@
 {
   "name": "tabbetclient",
-  "version": "1.1.1",
+  "version": "1.1",
   "description": "",
   "main": "index.js",
   "directories": {
     "doc": "docs"
   },
   "scripts": {
-    "test": "node tests/test_tabs.js && node tests/test_themes.js && python3 -m unittest tests/test_navigation.py && python3 -m unittest tests/test_single_instance_and_zoom.py && python3 -m unittest tests/test_tab_preloading_and_stability.py && python3 -m unittest tests/test_background_links_and_clipboard.py && python3 -m unittest tests/test_downloads.py",
+    "test": "node tests/test_tabs.js && node tests/test_themes.js && python3 -m unittest tests/test_navigation.py && python3 -m unittest tests/test_single_instance_and_zoom.py && python3 -m unittest tests/test_tab_preloading_and_stability.py && python3 -m unittest tests/test_background_links_and_clipboard.py && python3 -m unittest tests/test_downloads.py && python3 -m unittest tests/test_unread_and_version.py",
     "start": "python3 desktop/tabbedclient.py",
     "start:linux": "python3 desktop/tabbedclient.py",
     "build:packages": "python3 scripts/build_packages.py",
