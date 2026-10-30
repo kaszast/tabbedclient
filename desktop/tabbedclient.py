@@ -185,7 +185,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.1",
+    "version": "1.2",
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -215,16 +215,57 @@ def _default_favicon_url(url: str) -> str:
     return ""
 
 
+def resolve_service_icon(title: str, url: str, explicit_icon: str = "") -> str:
+    """
+    Meghatározza a fül hivatalos szolgáltatás-ikonját.
+    Ismert szolgáltatásoknál (Gmail, Naptár, Messenger, WhatsApp, Telegram stb.)
+    garantálja a beépített vektoros ikont, megelőzve a dinamikus weboldal-faviconok
+    (pl. Gmail rárajzolt unreadCountja vagy a Naptár napi dátuma) általi torzulást.
+    """
+    combined = f"{title or ''} {url or ''}".lower()
+    if "gmail" in combined or "mail.google" in combined:
+        return "gmail"
+    if "calendar.google" in combined or "naptár" in combined or "naptar" in combined:
+        return "calendar"
+    if "messenger" in combined or "m.me" in combined:
+        return "messenger"
+    if "whatsapp" in combined:
+        return "whatsapp"
+    if "telegram" in combined or "t.me" in combined:
+        return "telegram"
+    if "slack" in combined:
+        return "slack"
+    if "teams" in combined:
+        return "teams"
+    if "discord" in combined:
+        return "discord"
+    if "notion" in combined:
+        return "notion"
+    if "trello" in combined:
+        return "trello"
+    if "mail" in combined or "posta" in combined or "outlook" in combined or "proton" in combined:
+        return "mail"
+    if explicit_icon and explicit_icon != "globe":
+        return explicit_icon
+    return "globe"
+
+
 def extract_unread_count(title: str, url: str = "") -> int:
     """
     Kinyeri a valós olvasatlan értesítések / üzenetek számát a böngészőfül címéből.
     Kizárólag megbízható mintákra támaszkodik a hamis pozitívok (pl. levél tárgyában
-    vagy dátumban szereplő zárójeles számok) elkerülése érdekében.
+    vagy dátumban szereplő zárójeles számok, naptári dátumok) elkerülése érdekében.
     """
     if not title:
         return 0
 
     clean = title.strip()
+    low_url = (url or "").lower()
+    low_title = clean.lower()
+
+    # A Google Naptárnak nincs olvasatlan levél/üzenetszámlálója; a dátumokat (pl. '30') tilos számlálónak tekinteni
+    if "calendar.google" in low_url or "naptár" in low_title or "calendar" in low_title:
+        return 0
 
     # 1. Cím legelején lévő zárójeles szám: pl. '(3) Gmail', '[2] Slack', '*(1) Chat', '(99+) WhatsApp'
     m = re.match(r'^(?:\*\s*)?[\(\[]([0-9]+)\+?[\)\]]', clean)
@@ -489,19 +530,26 @@ def load_config():
         except (ValueError, TypeError):
             zoom_lvl = 1.0
 
+        icon_resolved = resolve_service_icon(title, url, t.get("icon", ""))
+        fav_clean = "" if icon_resolved != "globe" else (t.get("favicon") or "")
+        fav_url_clean = _default_favicon_url(url) if icon_resolved != "globe" else (t.get("faviconUrl") or _default_favicon_url(url))
+        unread_cnt = int(t.get("unreadCount", 0))
+        if icon_resolved == "calendar":
+            unread_cnt = 0
+
         normalized.append({
             "id": t.get("id") or f"tab-{uuid.uuid4().hex[:8]}",
             "title": title,
             "name": title,
             "url": url,
-            "icon": t.get("icon") or "globe",
+            "icon": icon_resolved,
             "profile": profile,
             "profileId": profile,
             "notificationsEnabled": bool(t.get("notificationsEnabled", True)),
-            "unreadCount": int(t.get("unreadCount", 0)),
+            "unreadCount": unread_cnt,
             "order": int(t.get("order", idx)),
-            "favicon": t.get("favicon") or "",
-            "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url),
+            "favicon": fav_clean,
+            "faviconUrl": fav_url_clean,
             "zoomLevel": zoom_lvl
         })
     # Ha sablonból töltöttük be, és a felhasználói config még nem létezik, mentsük el a felhasználói XDG helyre
@@ -1110,6 +1158,19 @@ class TabbedClientWindow(Gtk.Window):
         changed = False
         for t in self.config.get("tabs", []):
             if t.get("id") == tab_id:
+                # Ismert szolgáltatásnál (Gmail, Naptár, Messenger stb.) soha ne tároljunk el
+                # dinamikus, dátumos vagy rárajzolt unreadCountos weboldal-favicont
+                svc_icon = resolve_service_icon(t.get("title", ""), t.get("url", ""), t.get("icon", ""))
+                if svc_icon != "globe":
+                    if t.get("icon") != svc_icon:
+                        t["icon"] = svc_icon
+                        changed = True
+                    if t.get("favicon") or (t.get("faviconUrl") and "unreadcountfavicon" in t.get("faviconUrl")):
+                        t["favicon"] = ""
+                        t["faviconUrl"] = _default_favicon_url(t.get("url", ""))
+                        changed = True
+                    break
+
                 if favicon_data and t.get("favicon") != favicon_data:
                     t["favicon"] = favicon_data
                     changed = True
@@ -1849,14 +1910,21 @@ class TabbedClientWindow(Gtk.Window):
                 "  function __syncUnreadCount() {"
                 "    try {"
                 "      var count = 0;"
+                "      var loc = (window.location.href || '').toLowerCase();"
+                "      if (loc.indexOf('calendar.google') !== -1) {"
+                "        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tabbedclient_unread) {"
+                "          window.webkit.messageHandlers.tabbedclient_unread.postMessage(0);"
+                "        }"
+                "        return;"
+                "      }"
                 "      var title = document.title || '';"
                 "      var m = title.match(/^(?:\\*\\s*)?[\\(\\[]([0-9]+)\\+?[\\)\\]]/) ||"
                 "              title.match(/(?:Inbox|Beérkező levelek|Beérkezett üzenetek|Messages|Üzenetek|Chats|Csevegések)\\s*[\\(\\[]([0-9]+)\\+?[\\)\\]]/i) ||"
                 "              title.match(/(?:Telegram|Slack|Discord|Messenger|WhatsApp|Chat)\\s*(?:Web)?\\s*[\\(\\[]([0-9]+)\\+?[\\)\\]]$/i);"
                 "      if (m && m[1]) {"
                 "        count = parseInt(m[1], 10) || 0;"
-                "      } else {"
-                "        var el = document.querySelector('.bsU, .nav-count');"
+                "      } else if (loc.indexOf('mail.google') !== -1) {"
+                "        var el = document.querySelector('a[href*=\"#inbox\"] .bsU, .nav-count');"
                 "        if (el && el.textContent) {"
                 "          var domNum = parseInt(el.textContent.trim(), 10);"
                 "          if (!isNaN(domNum) && domNum >= 0) {"
@@ -2234,26 +2302,33 @@ class TabbedClientWindow(Gtk.Window):
             zoom_lvl = float(t.get("zoomLevel", 1.0))
             if zoom_lvl < 0.25 or zoom_lvl > 5.0:
                 zoom_lvl = 1.0
+
+            icon_resolved = resolve_service_icon(title, url, t.get("icon", ""))
+            fav_clean = "" if icon_resolved != "globe" else (t.get("favicon") or "")
+            fav_url_clean = _default_favicon_url(url) if icon_resolved != "globe" else (t.get("faviconUrl") or _default_favicon_url(url))
+            if icon_resolved == "calendar":
+                unread_count = 0
+
             normalized_tabs.append({
                 "id": t.get("id"),
                 "title": title,
                 "name": title,
                 "url": url,
-                "icon": t.get("icon") or "globe",
+                "icon": icon_resolved,
                 "profile": profile,
                 "profileId": profile,
                 "notificationsEnabled": notifications_enabled,
                 "unreadCount": unread_count,
                 "order": order,
-                "favicon": t.get("favicon") or "",
-                "faviconUrl": t.get("faviconUrl") or _default_favicon_url(url),
+                "favicon": fav_clean,
+                "faviconUrl": fav_url_clean,
                 "zoomLevel": round(zoom_lvl, 2)
             })
         self.config["tabs"] = normalized_tabs
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.1"),
+            "version": self.config.get("version", "1.2"),
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",
@@ -2287,6 +2362,11 @@ class TabbedClientWindow(Gtk.Window):
         target_tab = next((t for t in self.config["tabs"] if t["id"] == tab_id), None)
         if not target_tab:
             return
+
+        wv = self.tab_webviews.get(tab_id)
+        current_title = wv.get_title() if wv else ""
+        if extract_unread_count(current_title, target_tab.get("url", "")) == 0:
+            target_tab["unreadCount"] = 0
 
         self._ensure_tab_webview(target_tab)
         wv = self.tab_webviews.get(tab_id)
@@ -2414,7 +2494,7 @@ class TabbedClientWindow(Gtk.Window):
             title = (tab_obj.get("title") or tab_obj.get("name") or "Új szolgáltatás").strip()
             profile = tab_obj.get("profile") or tab_obj.get("profileId") or "work"
             url = (tab_obj.get("url") or "https://example.com").strip()
-            icon = tab_obj.get("icon") or "globe"
+            icon = resolve_service_icon(title, url, tab_obj.get("icon", ""))
             new_tab = {
                 "id": f"tab-{uuid.uuid4().hex[:8]}",
                 "title": title,
