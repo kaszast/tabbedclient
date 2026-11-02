@@ -44,10 +44,14 @@ def install_user_desktop_integration(silent=False):
             shutil.copy2(main_icon, os.path.join(user_pixmaps, "tabbedclient.png"))
 
         # 3. Indítófájl elérési útja
-        launcher_bin = os.path.join(BASE_DIR, "tabbedclient")
-        if not os.path.exists(launcher_bin) or not os.access(launcher_bin, os.X_OK):
-            # Fallback a python futtatóra
-            launcher_bin = f"/usr/bin/python3 {os.path.join(BASE_DIR, 'desktop', 'tabbedclient.py')}"
+        system_bin = shutil.which("tabbedclient") or "/usr/bin/tabbedclient"
+        if os.path.exists(system_bin) and os.access(system_bin, os.X_OK):
+            launcher_bin = system_bin
+        else:
+            launcher_bin = os.path.join(BASE_DIR, "tabbedclient")
+            if not os.path.exists(launcher_bin) or not os.access(launcher_bin, os.X_OK):
+                # Fallback a python futtatóra
+                launcher_bin = f"/usr/bin/python3 {os.path.join(BASE_DIR, 'desktop', 'tabbedclient.py')}"
 
         desktop_file_path = os.path.join(user_apps, "tabbedclient.desktop")
 

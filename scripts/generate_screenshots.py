@@ -21,6 +21,13 @@ os.environ['GDK_BACKEND'] = 'broadway'
 os.environ['BROADWAY_DISPLAY'] = PORT
 
 import sys
+import tempfile
+
+# Szigorúan izolált ideiglenes környezet: megakadályozza a felhasználói profilok vagy a lokális config érintését
+MOCK_TMP_DIR = tempfile.mkdtemp(prefix="tabbedclient_screens_")
+os.environ["XDG_CONFIG_HOME"] = os.path.join(MOCK_TMP_DIR, "config")
+os.environ["XDG_DATA_HOME"] = os.path.join(MOCK_TMP_DIR, "data")
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE_DIR, "desktop"))
 

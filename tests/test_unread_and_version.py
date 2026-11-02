@@ -24,31 +24,31 @@ class TestVersionConsistency(unittest.TestCase):
         pkg_path = os.path.join(project_root, "package.json")
         with open(pkg_path, "r", encoding="utf-8") as f:
             pkg = json.load(f)
-        self.assertEqual(pkg.get("version"), "1.4")
+        self.assertEqual(pkg.get("version"), "1.5")
 
         # 2. build_packages.py
-        self.assertEqual(get_project_version(), "1.4")
+        self.assertEqual(get_project_version(), "1.5")
 
         # 3. desktop/tabbedclient.py DEFAULT_CONFIG
-        self.assertEqual(DEFAULT_CONFIG.get("version"), "1.4")
+        self.assertEqual(DEFAULT_CONFIG.get("version"), "1.5")
 
         # 4. data/config.json.template
         tpl_path = os.path.join(project_root, "data", "config.json.template")
         with open(tpl_path, "r", encoding="utf-8") as f:
             tpl = json.load(f)
-        self.assertEqual(tpl.get("version"), "1.4")
+        self.assertEqual(tpl.get("version"), "1.5")
 
         # 5. src-tauri/tauri.conf.json
         tauri_path = os.path.join(project_root, "src-tauri", "tauri.conf.json")
         with open(tauri_path, "r", encoding="utf-8") as f:
             tauri_cfg = json.load(f)
-        self.assertEqual(tauri_cfg.get("version"), "1.4")
+        self.assertEqual(tauri_cfg.get("version"), "1.5")
 
         # 6. src/welcome.html badge szöveg
         welcome_path = os.path.join(project_root, "src", "welcome.html")
         with open(welcome_path, "r", encoding="utf-8") as f:
             welcome_content = f.read()
-        self.assertIn('>v1.4</span>', welcome_content)
+        self.assertIn('>v1.5</span>', welcome_content)
 
 
 class TestServiceIconResolution(unittest.TestCase):
@@ -123,6 +123,48 @@ class TestUnreadCountExtraction(unittest.TestCase):
             tpl = json.load(f)
         for tab in tpl.get("tabs", []):
             self.assertEqual(tab.get("unreadCount", 0), 0, f"A(z) {tab.get('id')} fül alapértelmezett számlálója nem 0")
+
+
+class TestLayoutAndPathResolution(unittest.TestCase):
+    """Ellenőrzi a kezdőlap kártyaelrendezésének overflow-védelmét és a konfigurációs útvonalak prioritását."""
+
+    def test_welcome_service_row_styles(self):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        welcome_path = os.path.join(project_root, "src", "welcome.html")
+        with open(welcome_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        # Ellenőrizzük a flexbox overflow-védelmi szabályokat
+        self.assertIn(".service-row-actions", html)
+        self.assertIn("flex-shrink: 0", html)
+        self.assertIn("min-width: 0", html)
+        self.assertIn("text-overflow: ellipsis", html)
+        self.assertIn("box-sizing: border-box", html)
+        self.assertIn(".btn-icon-action", html)
+        self.assertIn(".btn-action-text", html)
+
+    def test_resolve_paths_xdg_priority(self):
+        import tempfile
+        from desktop.tabbedclient import _resolve_paths
+
+        # Ideiglenes XDG környezet meglévő config.json fájllal
+        with tempfile.TemporaryDirectory() as tmp_xdg:
+            cfg_dir = os.path.join(tmp_xdg, "tabbedclient")
+            os.makedirs(cfg_dir, exist_ok=True)
+            cfg_file = os.path.join(cfg_dir, "config.json")
+            with open(cfg_file, "w") as f:
+                f.write('{"version": "1.5", "tabs": [{"id": "user-tab"}]}')
+
+            orig_xdg = os.environ.get("XDG_CONFIG_HOME")
+            try:
+                os.environ["XDG_CONFIG_HOME"] = tmp_xdg
+                data_dir, config_path, profiles_dir = _resolve_paths()
+                self.assertEqual(config_path, cfg_file)
+            finally:
+                if orig_xdg is not None:
+                    os.environ["XDG_CONFIG_HOME"] = orig_xdg
+                else:
+                    os.environ.pop("XDG_CONFIG_HOME", None)
 
 
 if __name__ == "__main__":

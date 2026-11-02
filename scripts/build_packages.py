@@ -29,7 +29,7 @@ def get_project_version() -> str:
                     return str(v).strip()
         except Exception:
             pass
-    return "1.4"
+    return "1.5"
 
 
 VERSION = get_project_version()

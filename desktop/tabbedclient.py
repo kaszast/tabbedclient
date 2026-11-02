@@ -62,28 +62,38 @@ if not os.path.exists(TEMPLATE_CONFIG_PATH):
 def _resolve_paths():
     """
     Meghatározza a konfiguráció, adatprofilok és gyorsítótár elérési útvonalait.
-    - Rendszerszintű telepítés (/usr, /opt) esetén szabványos XDG könyvtárakat használ
-      (~/.config/tabbedclient és ~/.local/share/tabbedclient), így sosem lép fel jogosultsági hiba (PermissionError).
-    - Hordozható (Portable) vagy fejlesztői környezetben, ha a helyi ./data mappa írható,
-      akkor a helyi adatkönyvtárat használja.
+    1. Ha explicit hordozható mód van érvényben ('--portable' flag vagy '.portable' fájl),
+       és a helyi ./data mappa létezik és írható, akkor azt használja.
+    2. Ha a felhasználó szabványos XDG konfigurációja (~/.config/tabbedclient/config.json)
+       már létezik, MINDIG azt preferálja, hogy a felhasználói beállítások és fülek megmaradjanak.
+    3. Ha az alkalmazás rendszerszintű telepítésből (/usr, /opt) fut, vagy a helyi ./data
+       nem írható, akkor szintén az XDG könyvtárakat használja.
+    4. Fejlesztői / teszt környezetben, ha még nincs XDG konfiguráció, a helyi ./data-t használja.
     """
-    is_system_install = BASE_DIR.startswith("/usr") or BASE_DIR.startswith("/opt")
+    xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    xdg_data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+
+    xdg_config_dir = os.path.join(xdg_config, "tabbedclient")
+    xdg_data_dir = os.path.join(xdg_data, "tabbedclient")
+    xdg_profiles_dir = os.path.join(xdg_data_dir, "profiles")
+    xdg_config_path = os.path.join(xdg_config_dir, "config.json")
+
     local_data = os.path.join(BASE_DIR, "data")
+    local_available = os.path.exists(local_data) and os.access(local_data, os.W_OK)
+    is_portable = ("--portable" in sys.argv) or os.path.exists(os.path.join(BASE_DIR, ".portable"))
+    is_system_install = BASE_DIR.startswith("/usr") or BASE_DIR.startswith("/opt")
 
-    if not is_system_install and os.path.exists(local_data) and os.access(local_data, os.W_OK):
-        data_dir = local_data
-        config_path = os.path.join(data_dir, "config.json")
-        profiles_dir = os.path.join(data_dir, "profiles")
-    else:
-        xdg_config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-        xdg_data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-        
-        config_dir = os.path.join(xdg_config, "tabbedclient")
-        data_dir = os.path.join(xdg_data, "tabbedclient")
-        profiles_dir = os.path.join(data_dir, "profiles")
-        config_path = os.path.join(config_dir, "config.json")
+    if is_portable and local_available:
+        return local_data, os.path.join(local_data, "config.json"), os.path.join(local_data, "profiles")
 
-    return data_dir, config_path, profiles_dir
+    # Ha a felhasználó XDG konfigurációja már létezik, az az abszolút prioritás
+    if os.path.exists(xdg_config_path):
+        return xdg_data_dir, xdg_config_path, xdg_profiles_dir
+
+    if is_system_install or not local_available:
+        return xdg_data_dir, xdg_config_path, xdg_profiles_dir
+
+    return local_data, os.path.join(local_data, "config.json"), os.path.join(local_data, "profiles")
 
 
 DATA_DIR, CONFIG_PATH, PROFILES_DIR = _resolve_paths()
@@ -94,7 +104,7 @@ try:
 except Exception:
     pass
 
-APP_VERSION = "1.4"
+APP_VERSION = "1.5"
 INSTANCE_SOCKET_NAME = "tabbedclient.sock"
 
 
@@ -616,8 +626,14 @@ def load_config():
 
 def save_config(cfg):
     try:
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        os.makedirs(DATA_DIR, exist_ok=True)
+        try:
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        except Exception:
+            pass
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except Exception:
+            pass
         if "settings" not in cfg or not isinstance(cfg["settings"], dict):
             cfg["settings"] = {
                 "theme": cfg.get("theme", "slate"),
