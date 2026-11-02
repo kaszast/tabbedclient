@@ -110,6 +110,11 @@ class TestNavigationLogic(unittest.TestCase):
             is_external_link(messenger_tab, fb_event),
             "A Messenger fülön kattintott Facebook esemény külön böngészőablakban nyitandó meg!"
         )
+        fb_event_internal_domain = "https://www.messenger.com/events/987654321098765/"
+        self.assertTrue(
+            is_external_link(messenger_tab, fb_event_internal_domain),
+            "A Messenger domain alatti /events/ link is külső böngészőben nyitandó meg!"
+        )
         fb_post = "https://facebook.com/permalink.php?story_fbid=123&id=456"
         self.assertTrue(
             is_external_link(messenger_tab, fb_post),

@@ -94,6 +94,7 @@ try:
 except Exception:
     pass
 
+APP_VERSION = "1.4"
 INSTANCE_SOCKET_NAME = "tabbedclient.sock"
 
 
@@ -112,22 +113,38 @@ def get_instance_socket_path() -> str:
 def try_activate_existing_instance() -> bool:
     """
     Megpróbálja elérni a már futó példányt és előtérbe hozni azt.
-    Ha sikerül, True-val tér vissza (és az új folyamat kiléphet).
+    Ha a futó példány régebbi verzió, jelzést küldünk neki a leállásra,
+    és az új példány átveszi a helyét (False-szal térünk vissza).
+    Ha azonos verzió fut, True-val térünk vissza (az új folyamat kilép).
     Ha nem fut példány, False-szal tér vissza.
     """
+    import time
     sock_path = get_instance_socket_path()
     if not os.path.exists(sock_path):
         return False
 
     try:
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.settimeout(1.0)
+        client.settimeout(1.5)
         client.connect(sock_path)
-        client.sendall(b"ACTIVATE\n")
+        client.sendall(f"ACTIVATE {APP_VERSION}\n".encode("utf-8"))
+        try:
+            resp = client.recv(1024).decode("utf-8", errors="ignore").strip()
+        except Exception:
+            resp = "OK"
         client.close()
+
+        if resp == "REPLACE":
+            time.sleep(0.5)
+            try:
+                if os.path.exists(sock_path):
+                    os.unlink(sock_path)
+            except Exception:
+                pass
+            return False
+
         return True
     except (ConnectionRefusedError, FileNotFoundError, socket.timeout):
-        # Az előző futás összeomlott és a socket fájl elárvult
         try:
             if os.path.exists(sock_path):
                 os.unlink(sock_path)
@@ -139,10 +156,11 @@ def try_activate_existing_instance() -> bool:
         return False
 
 
-def setup_single_instance_server(activate_callback):
+def setup_single_instance_server(activate_callback, quit_callback=None):
     """
     Létrehozza a helyi Unix domain socket szervert az egypéldányos futáshoz.
     GLib IO watch segítségével eseményvezérelten figyeli a bejövő aktiválási kéréseket.
+    Ha újabb / eltérő verzió próbál indulni, a futó példány átadja a helyét.
     """
     sock_path = get_instance_socket_path()
     try:
@@ -160,10 +178,28 @@ def setup_single_instance_server(activate_callback):
         def _on_socket_activity(source, condition):
             try:
                 conn, _ = server.accept()
-                data = conn.recv(1024)
-                if b"ACTIVATE" in data:
+                raw = conn.recv(1024).decode("utf-8", errors="ignore")
+                parts = raw.strip().split()
+                cmd = parts[0] if parts else ""
+                incoming_ver = parts[1] if len(parts) > 1 else ""
+
+                if incoming_ver and incoming_ver != APP_VERSION and quit_callback:
+                    try:
+                        conn.sendall(b"REPLACE\n")
+                        conn.close()
+                    except Exception:
+                        pass
+                    GLib.idle_add(quit_callback)
+                    return True
+
+                try:
+                    conn.sendall(b"OK\n")
+                    conn.close()
+                except Exception:
+                    pass
+
+                if "ACTIVATE" in cmd:
                     GLib.idle_add(activate_callback)
-                conn.close()
             except Exception:
                 pass
             return True
@@ -189,7 +225,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.3",
+    "version": APP_VERSION,
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -454,17 +490,23 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
         parsed_base = urllib.parse.urlsplit(tab_base_url or "")
         base_host = parsed_base.netloc.lower().split(":")[0]
         target_host = parsed_target.netloc.lower().split(":")[0]
+        target_path = parsed_target.path.lower()
 
         if not base_host:
             return False
 
+        # Ha Messenger fülön vagyunk (messenger.com vagy m.me):
+        if "messenger.com" in base_host or base_host == "m.me":
+            # 1. Ha a célpont Facebook tartomány (facebook.com, fb.com, fb.me):
+            if "facebook.com" in target_host or "fb.com" in target_host or "fb.me" in target_host:
+                return True
+            # 2. Ha az elért útvonal Facebook tartalomfunkció (esemény, csoport, videó, piactér stb.):
+            # A Messengeren nincs belső /events/, /groups/, ezek mindig a Facebookra mutatnak.
+            if any(target_path.startswith(p) for p in ("/events", "/groups", "/pages", "/watch", "/marketplace", "/photo", "/permalink", "/story")):
+                return True
+
         if target_host == base_host:
             return False
-
-        # Ha Messenger fülről Facebook vagy egyéb Meta hivatkozásra (esemény, bejegyzés, csoport stb.) kattint a felhasználó:
-        # A csevegő felületen ne navigáljon el a Facebook weboldalra, hanem külső böngészőben (külön ablakban) nyíljon meg.
-        if ("messenger.com" in base_host or base_host == "m.me") and ("facebook.com" in target_host or "fb.com" in target_host or "fb.me" in target_host):
-            return True
 
         # Ha azonos ökoszisztémához / szolgáltatáshoz tartoznak
         if are_domains_same_service(base_host, target_host):
@@ -497,7 +539,7 @@ def load_config():
             with open(target_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    cfg["version"] = data.get("version", "1.1")
+                    cfg["version"] = APP_VERSION  # Mindig a futó alkalmazás verziója érvényesül
                     if isinstance(data.get("settings"), dict):
                         cfg["settings"].update(data["settings"])
                     if isinstance(data.get("profiles"), list) and len(data["profiles"]) > 0:
@@ -1301,6 +1343,12 @@ class TabbedClientWindow(Gtk.Window):
         if not real_uri or real_uri.startswith("about:") or real_uri.startswith("javascript:"):
             return
 
+        # Ha Messenger Facebook esemény vagy csoport link: alakítsuk közvetlen facebook.com URL-re
+        if "messenger.com" in real_uri and any(p in real_uri for p in ("/events", "/groups", "/pages", "/watch", "/marketplace", "/photo")):
+            real_uri = real_uri.replace("https://www.messenger.com", "https://www.facebook.com").replace("https://messenger.com", "https://www.facebook.com")
+        elif real_uri.startswith(("/events", "/groups", "/pages", "/watch", "/marketplace", "/photo")):
+            real_uri = f"https://www.facebook.com{real_uri}"
+
         print(f"[TabbedClient] Külső link megnyitása alapértelmezett böngészőben: {real_uri} (háttérben: {in_background})")
 
         launched = False
@@ -1391,42 +1439,37 @@ class TabbedClientWindow(Gtk.Window):
 
     def _on_create_webview(self, webview, navigation_action, tab_id: str):
         """Kezeli a target='_blank' vagy window.open() hívásokat."""
-        is_gesture = navigation_action.is_user_gesture() if navigation_action else False
         req = navigation_action.get_request() if navigation_action else None
         uri = req.get_uri() if req else None
 
         modifiers = navigation_action.get_modifiers() if navigation_action else 0
         ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
         mouse_btn = navigation_action.get_mouse_button() if navigation_action else 0
-
-        # Ha nem felhasználói gesztus indította (pl. háttérben futó script, automata popup vagy Meta MAW proxy)
-        if not is_gesture:
-            return None
+        is_gesture = navigation_action.is_user_gesture() if navigation_action else False
 
         tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
         tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
 
         if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
             real_url = extract_real_target_url(uri)
-            # Blob URL-ek letöltésként kezelendők, nem weblapként
             if real_url.startswith("blob:"):
                 return None
-
-            # Ctrl+bal klikk vagy középső egérgomb: mindig háttérben külső böngészőben nyílik!
             if ctrl_pressed or mouse_btn == 2:
                 self.open_external_uri(real_url, in_background=True)
                 return None
-
             if is_auth_or_login_url(real_url):
-                # OAuth / azonosítási folyamat a fülön belül folytatódik
                 webview.load_uri(real_url)
                 return None
-            elif is_external_link(tab_url, real_url):
+            if is_external_link(tab_url, real_url):
                 self.open_external_uri(real_url)
                 return None
             else:
                 webview.load_uri(real_url)
                 return None
+
+        # Ha nem felhasználói gesztus indította és nincs konkrét URI
+        if not is_gesture:
+            return None
 
         # Ha az URI a létrehozás pillanatában még nem ismert, de van felhasználói gesztus
         try:
@@ -1557,14 +1600,17 @@ class TabbedClientWindow(Gtk.Window):
                 decision.ignore()
                 return True
 
-            # Csak akkor nyitunk külső böngészőt, ha kifejezett felhasználói kattintás történt!
-            # Háttérben futó scriptek, automatikus átirányítások, iframe-ek (user_gesture nélkül) a WebView-n belül maradnak.
-            is_user_click = (nav_type == WebKit2.NavigationType.LINK_CLICKED) or (is_gesture and mouse_btn in (1, 2))
-            if is_user_click:
-                if is_external_link(tab_url, uri):
-                    self.open_external_uri(uri)
-                    decision.ignore()
-                    return True
+            real_target = extract_real_target_url(uri)
+            if is_auth_or_login_url(real_target):
+                return False
+
+            # Ha a hivatkozás külső böngészőben nyitandó meg (pl. Messengeren Facebook esemény vagy külső link):
+            # Akkor is megnyitjuk külső böngészőben, ha a weboldal belső JavaScriptje (pl. React SPA router)
+            # vezérelte a kattintást (nav_type == OTHER), megakadályozva a csevegő felület felülírását!
+            if is_external_link(tab_url, real_target):
+                self.open_external_uri(real_target)
+                decision.ignore()
+                return True
 
         return False
 
@@ -2377,7 +2423,7 @@ class TabbedClientWindow(Gtk.Window):
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.3"),
+            "version": APP_VERSION,
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",
@@ -2585,7 +2631,10 @@ def main():
     def _on_activate_remote():
         win.restore_and_present()
 
-    server = setup_single_instance_server(_on_activate_remote)
+    def _on_quit_remote():
+        win.quit_application()
+
+    server = setup_single_instance_server(_on_activate_remote, _on_quit_remote)
 
     Gtk.main()
 

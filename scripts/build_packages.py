@@ -29,7 +29,7 @@ def get_project_version() -> str:
                     return str(v).strip()
         except Exception:
             pass
-    return "1.3"
+    return "1.4"
 
 
 VERSION = get_project_version()
@@ -92,6 +92,34 @@ Description: Zero-telemetry multi-account tabbed web client
     with open(control_file, "w", encoding="utf-8") as f:
         f.write(control_content)
 
+    # DEBIAN/postinst: ikongyorsítótár és desktop adatbázis azonnali frissítése, régi folyamatok leállítása
+    postinst_content = """#!/bin/sh
+set -e
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database /usr/share/applications || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+pkill -f "tabbedclient.py" || true
+exit 0
+"""
+    postinst_file = os.path.join(debian_dir, "postinst")
+    with open(postinst_file, "w", encoding="utf-8") as f:
+        f.write(postinst_content)
+    os.chmod(postinst_file, 0o755)
+
+    # DEBIAN/prerm: eltávolításkor vagy felülírás előtt a futó folyamat leállítása
+    prerm_content = """#!/bin/sh
+set -e
+pkill -f "tabbedclient.py" || true
+exit 0
+"""
+    prerm_file = os.path.join(debian_dir, "prerm")
+    with open(prerm_file, "w", encoding="utf-8") as f:
+        f.write(prerm_content)
+    os.chmod(prerm_file, 0o755)
+
     os.chmod(deb_root, 0o755)
     os.chmod(debian_dir, 0o755)
     os.chmod(control_file, 0o644)
@@ -117,14 +145,16 @@ exec /usr/bin/python3 /usr/share/tabbedclient/desktop/tabbedclient.py "$@"
     # 5. .desktop fájl
     desktop_content = """[Desktop Entry]
 Name=TabbedClient
-Comment=Zero-telemetry multi-tab web client with partition isolation
-Exec=/usr/bin/tabbedclient
+GenericName=Multi-Account Web Kliens
+Comment=Zero-telemetry multi-account tabbed web client with partition isolation
+Exec=/usr/bin/tabbedclient %U
 Icon=tabbedclient
 Terminal=false
 Type=Application
 Categories=Network;WebBrowser;Chat;
 StartupNotify=true
 StartupWMClass=tabbedclient
+MimeType=x-scheme-handler/http;x-scheme-handler/https;
 """
     with open(os.path.join(desktop_dir, "tabbedclient.desktop"), "w", encoding="utf-8") as f:
         f.write(desktop_content)
