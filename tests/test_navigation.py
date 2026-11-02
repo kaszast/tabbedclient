@@ -104,6 +104,24 @@ class TestNavigationLogic(unittest.TestCase):
             "A Messenger l.php átirányítás kibontás után külső linknek minősül!"
         )
 
+        # Messenger fülről Facebook esemény vagy bejegyzés: külső ablakban nyitandó meg!
+        fb_event = "https://www.facebook.com/events/987654321098765/"
+        self.assertTrue(
+            is_external_link(messenger_tab, fb_event),
+            "A Messenger fülön kattintott Facebook esemény külön böngészőablakban nyitandó meg!"
+        )
+        fb_post = "https://facebook.com/permalink.php?story_fbid=123&id=456"
+        self.assertTrue(
+            is_external_link(messenger_tab, fb_post),
+            "A Messenger fülön kattintott Facebook poszt külső böngészőben nyitandó meg!"
+        )
+
+        # Messenger belső csevegés navigációja maradjon a fülön belül
+        self.assertFalse(
+            is_external_link(messenger_tab, "https://www.messenger.com/t/987654321"),
+            "A Messenger csevegési belső linkeknek a fülön belül kell maradniuk!"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

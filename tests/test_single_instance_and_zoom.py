@@ -138,6 +138,39 @@ class TestSingleInstance(unittest.TestCase):
             finally:
                 tc.get_instance_socket_path = orig_sock_fn
 
+    def test_restore_and_present_and_reset_url(self):
+        from desktop.tabbedclient import TabbedClientWindow
+        self.assertTrue(hasattr(TabbedClientWindow, "restore_and_present"))
+        self.assertTrue(hasattr(TabbedClientWindow, "reset_tab_to_initial_url"))
+
+        # Szimuláljuk a reset_tab_to_initial_url működését mock WebView-val
+        loaded_uris = []
+        class MockWebView:
+            def load_uri(self, uri):
+                loaded_uris.append(uri)
+
+        class DummyWin:
+            def __init__(self):
+                self.config = {
+                    "activeTabId": "tab-gmail",
+                    "tabs": [
+                        {"id": "tab-gmail", "url": "https://mail.google.com/mail/u/0/"},
+                        {"id": "tab-messenger", "url": "https://www.messenger.com/"}
+                    ]
+                }
+                self.tab_webviews = {
+                    "tab-gmail": MockWebView(),
+                    "tab-messenger": MockWebView()
+                }
+            def switch_to_tab(self, tid):
+                self.config["activeTabId"] = tid
+
+        dummy = DummyWin()
+        # Meghívjuk az un-bound metódust a dummy példányon
+        TabbedClientWindow.reset_tab_to_initial_url(dummy, "tab-messenger")
+        self.assertEqual(loaded_uris, ["https://www.messenger.com/"])
+        self.assertEqual(dummy.config["activeTabId"], "tab-messenger")
+
 
 if __name__ == "__main__":
     unittest.main()

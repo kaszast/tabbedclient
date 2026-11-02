@@ -48,6 +48,10 @@ except Exception:
 
 from gi.repository import Gtk, WebKit2, Gdk, GLib, GdkPixbuf, Gio
 
+# GTK / X11 / Wayland folyamatazonosítás és tálca-illeszkedés biztosítása
+GLib.set_prgname("tabbedclient")
+GLib.set_application_name("TabbedClient")
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_DIR = os.path.join(BASE_DIR, "src")
 TEMPLATE_CONFIG_PATH = os.path.join(BASE_DIR, "data", "config.json")
@@ -185,7 +189,7 @@ SIDEBAR_EXPANDED_WIDTH = 220
 SIDEBAR_COLLAPSED_WIDTH = 48
 
 DEFAULT_CONFIG = {
-    "version": "1.2",
+    "version": "1.3",
     "theme": "slate",
     "sidebarCollapsed": False,
     "activeTabId": None,
@@ -457,6 +461,11 @@ def is_external_link(tab_base_url: str, target_uri: str) -> bool:
         if target_host == base_host:
             return False
 
+        # Ha Messenger fülről Facebook vagy egyéb Meta hivatkozásra (esemény, bejegyzés, csoport stb.) kattint a felhasználó:
+        # A csevegő felületen ne navigáljon el a Facebook weboldalra, hanem külső böngészőben (külön ablakban) nyíljon meg.
+        if ("messenger.com" in base_host or base_host == "m.me") and ("facebook.com" in target_host or "fb.com" in target_host or "fb.me" in target_host):
+            return True
+
         # Ha azonos ökoszisztémához / szolgáltatáshoz tartoznak
         if are_domains_same_service(base_host, target_host):
             # Kivétel: Google /url keresési átirányítás külső célponttal
@@ -588,6 +597,7 @@ def save_config(cfg):
 class TabbedClientWindow(Gtk.Window):
     def __init__(self):
         super().__init__(title="TabbedClient — Kezdőlap")
+        self.set_wmclass("tabbedclient", "tabbedclient")
         self.set_default_size(1280, 840)
         self.set_position(Gtk.WindowPosition.CENTER)
 
@@ -773,11 +783,28 @@ class TabbedClientWindow(Gtk.Window):
             self.show_window_and_present()
         self.update_tray_menu()
 
-    def show_window_and_present(self):
+    def restore_and_present(self):
+        """
+        Visszaállítja az ablakot, ha minimalizálva (iconified) vagy rejtve van,
+        és az aktuális időbélyeggel előtérbe hozza, valamint aktívvá teszi.
+        """
+        self.deiconify()
         self.show_all()
-        self.present()
+        current_time = Gdk.CURRENT_TIME
+        self.present_with_time(current_time)
+        gdk_win = self.get_window()
+        if gdk_win:
+            try:
+                gdk_win.show()
+                gdk_win.raise_()
+                gdk_win.focus(current_time)
+            except Exception:
+                pass
         self._notify_active_webview_resize()
         self.update_tray_menu()
+
+    def show_window_and_present(self):
+        self.restore_and_present()
 
     def quit_application(self):
         self._flush_config_save()
@@ -2157,6 +2184,23 @@ class TabbedClientWindow(Gtk.Window):
         if wv is not None:
             wv.reload()
 
+    def reset_tab_to_initial_url(self, tab_id: str):
+        if not tab_id or tab_id == "home":
+            tab_id = self.config.get("activeTabId")
+        if not tab_id or tab_id == "home":
+            return
+        if self.config.get("activeTabId") != tab_id:
+            self.switch_to_tab(tab_id)
+        target_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+        if not target_tab:
+            return
+        initial_url = target_tab.get("url")
+        if not initial_url:
+            return
+        wv = self.tab_webviews.get(tab_id)
+        if wv is not None:
+            wv.load_uri(initial_url)
+
     def toggle_tab_notifications(self, tab_id: str):
         tabs = self.config.get("tabs", [])
         tab = next((t for t in tabs if t.get("id") == tab_id), None)
@@ -2192,6 +2236,11 @@ class TabbedClientWindow(Gtk.Window):
         item_home = self._create_icon_menu_item("go-home-symbolic", "Kezdőlap")
         item_home.connect("activate", lambda *_: self.switch_to_tab("home"))
         menu.append(item_home)
+
+        item_reset = self._create_icon_menu_item("document-revert-symbolic", "Visszatérés a kezdőoldalra")
+        item_reset.set_sensitive(has_service)
+        item_reset.connect("activate", lambda *_: self.reset_tab_to_initial_url(target_service_id))
+        menu.append(item_reset)
 
         item_reload = self._create_icon_menu_item("view-refresh-symbolic", "Frissítés")
         item_reload.set_sensitive(has_service)
@@ -2328,7 +2377,7 @@ class TabbedClientWindow(Gtk.Window):
 
         settings = self.config.get("settings", {})
         payload = {
-            "version": self.config.get("version", "1.2"),
+            "version": self.config.get("version", "1.3"),
             "theme": self.config.get("theme", "slate"),
             "sidebarCollapsed": collapsed,
             "activeTabId": self.config.get("activeTabId") or "home",
@@ -2475,6 +2524,10 @@ class TabbedClientWindow(Gtk.Window):
             tab_id = msg.get("id") or msg.get("tabId")
             self.reload_tab(tab_id)
 
+        elif msg_type == "RESET_TAB_URL":
+            tab_id = msg.get("id") or msg.get("tabId")
+            self.reset_tab_to_initial_url(tab_id)
+
         elif msg_type == "SHOW_CONTEXT_MENU":
             tab_id = msg.get("id") or msg.get("tabId")
             self.show_sidebar_context_menu(tab_id)
@@ -2520,6 +2573,9 @@ class TabbedClientWindow(Gtk.Window):
 
 
 def main():
+    GLib.set_prgname("tabbedclient")
+    GLib.set_application_name("TabbedClient")
+
     # Egypéldányos ellenőrzés: ha már fut példány, aktiváljuk és ez a folyamat kilép
     if try_activate_existing_instance():
         sys.exit(0)
@@ -2527,8 +2583,7 @@ def main():
     win = TabbedClientWindow()
 
     def _on_activate_remote():
-        win.deiconify()
-        win.show_window_and_present()
+        win.restore_and_present()
 
     server = setup_single_instance_server(_on_activate_remote)
 
