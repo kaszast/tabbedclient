@@ -63,3 +63,9 @@
 - [x] Külső böngészőben nyíló linkek és oldal-nagyítás (Ctrl+görgő, Ctrl+/-, Ctrl0) javítása: JavaScript által vezérelt átirányítások és popup-blokkolt linkek elfogása a WebKit policy-döntésekben, Gio AppInfo + xdg-open külső hívás, Gdk.EventMask és set_zoom_level eseménykezelés beépítése.
 - [x] Részletes README.md dokumentáció és képernyőkép-generáló automatizmus (`scripts/generate_screenshots.py`, 12 db képernyőkép a `docs/screenshots/` mappában az 5 témáról, modálokról és funkciókról), git commit elkészítése.
 - [x] Valódi ablakfelületi képernyőképek generálása (TabbedClientWindow + Broadway), 6 darab anonymizált minta-szolgáltatás (Gmail, Slack, WhatsApp, Telegram, Naptár, Notion) és kényes sorok szűrése, Git commit elkészítése.
+- [x] Drag & drop csatolás és Messenger duplikáció javítása (v1.7):
+  - [x] DnD műveletnél (`is_dnd`) a paste esemény tiltása a Messenger 2x duplikációjának megszüntetésére
+  - [x] Intelligens célpontkereső (`resolveTarget`) és Gmail compose ablak / levélszerkesztő célzás
+  - [x] Gmail natív csatolmány-input (`input[type="file"][name="Filedata"]`) feltöltése és automatikus Levélírás megnyitás
+  - [x] Verziószám szinkronizálása v1.7-re minden forrásban és csomagban
+  - [x] Automatizált tesztek bővítése (`npm test` 8/8 zöld) és telepítőcsomagok újraépítése (`tabbedclient_1.7_all.deb`)

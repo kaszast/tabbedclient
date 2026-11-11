@@ -24,31 +24,31 @@ class TestVersionConsistency(unittest.TestCase):
         pkg_path = os.path.join(project_root, "package.json")
         with open(pkg_path, "r", encoding="utf-8") as f:
             pkg = json.load(f)
-        self.assertEqual(pkg.get("version"), "1.6")
+        self.assertEqual(pkg.get("version"), "1.7")
 
         # 2. build_packages.py
-        self.assertEqual(get_project_version(), "1.6")
+        self.assertEqual(get_project_version(), "1.7")
 
         # 3. desktop/tabbedclient.py DEFAULT_CONFIG
-        self.assertEqual(DEFAULT_CONFIG.get("version"), "1.6")
+        self.assertEqual(DEFAULT_CONFIG.get("version"), "1.7")
 
         # 4. data/config.json.template
         tpl_path = os.path.join(project_root, "data", "config.json.template")
         with open(tpl_path, "r", encoding="utf-8") as f:
             tpl = json.load(f)
-        self.assertEqual(tpl.get("version"), "1.6")
+        self.assertEqual(tpl.get("version"), "1.7")
 
         # 5. src-tauri/tauri.conf.json
         tauri_path = os.path.join(project_root, "src-tauri", "tauri.conf.json")
         with open(tauri_path, "r", encoding="utf-8") as f:
             tauri_cfg = json.load(f)
-        self.assertEqual(tauri_cfg.get("version"), "1.6")
+        self.assertEqual(tauri_cfg.get("version"), "1.7")
 
         # 6. src/welcome.html badge szöveg
         welcome_path = os.path.join(project_root, "src", "welcome.html")
         with open(welcome_path, "r", encoding="utf-8") as f:
             welcome_content = f.read()
-        self.assertIn('>v1.6</span>', welcome_content)
+        self.assertIn('>v1.7</span>', welcome_content)
 
 
 class TestServiceIconResolution(unittest.TestCase):

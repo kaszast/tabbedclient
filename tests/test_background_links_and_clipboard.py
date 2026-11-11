@@ -173,6 +173,31 @@ class TestBackgroundLinksAndClipboard(unittest.TestCase):
         self.assertTrue(res)
         mock_decision.ignore.assert_called_once()
 
+    def test_dnd_file_injection_separates_drop_from_paste_and_resolves_targets(self):
+        """Teszteli, hogy DnD esetén (drop_coords megadva) a JavaScript szétválasztja a drop és paste eseményeket, és tartalmazza a Gmail compose célpontkeresést."""
+        mock_wv = MagicMock()
+        files = [
+            {"filename": "foto.png", "type": "image/png", "data": "YWJj"}
+        ]
+        self.app._inject_files_to_webview(mock_wv, files, drop_coords=(250, 400))
+        mock_wv.run_javascript.assert_called_once()
+        js_code = mock_wv.run_javascript.call_args[0][0]
+
+        # Koordináták beágyazása
+        self.assertIn("var dropX = 250;", js_code)
+        self.assertIn("var dropY = 400;", js_code)
+        self.assertIn("var isDnD = (typeof dropX === 'number' && typeof dropY === 'number');", js_code)
+
+        # Célpontkereső és Gmail compose logika
+        self.assertIn("resolveTarget", js_code)
+        self.assertIn("executeAttachment", js_code)
+        self.assertIn(".Am.Al.editable", js_code)
+        self.assertIn("input[type=\"file\"][name=\"Filedata\"]", js_code)
+        self.assertIn("mail.google.com", js_code)
+
+        # DnD esetén nincs paste hívás a drop mellett (a paste a vágólap else ágában van)
+        self.assertIn("// DnD esetén tilos paste eseményt küldeni, megelőzve a Messenger duplikációját!", js_code)
+
 
 if __name__ == "__main__":
     unittest.main()
