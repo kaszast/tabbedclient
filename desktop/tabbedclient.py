@@ -104,7 +104,7 @@ try:
 except Exception:
     pass
 
-APP_VERSION = "1.7"
+APP_VERSION = "1.8"
 INSTANCE_SOCKET_NAME = "tabbedclient.sock"
 
 
@@ -1765,9 +1765,9 @@ class TabbedClientWindow(Gtk.Window):
 
     def _inject_files_to_webview(self, webview, files: list[dict], drop_coords: tuple[int, int] | None = None):
         """
-        Szintetikus DragEvent ('dragenter', 'dragover', 'drop') vagy vágólap esetén ClipboardEvent ('paste')
-        eseményeket vált ki a weboldalon a fájlok közvetlen csatolásához.
-        Támogatja a pontos (x, y) egérkoordinátákat, a webmailek (Gmail Compose) célpontkeresését és a több fájlos csatolást.
+        Szintetikus DragEvent ('dragenter', 'dragover', 'drop'), vágólapos ClipboardEvent ('paste')
+        vagy form-alapú fájlinjektálást hajt végre a weboldalon a fájlok pontos, egyszeri csatolásához.
+        Szolgáltatás-specifikusan optimalizált Gmail, Messenger, Telegram és általános weboldalak esetén.
         """
         if not files:
             return
@@ -1805,7 +1805,101 @@ class TabbedClientWindow(Gtk.Window):
         var clientX = isDnD ? dropX : 0;
         var clientY = isDnD ? dropY : 0;
 
-        function resolveTarget() {{
+        // 1. GMAIL (mail.google.com): A natív csatolmány-input (Filedata) feltöltése
+        // SOHA nem küldünk mellette szintetikus drop eseményt, mert az duplikációt (2x csatolást) okoz!
+        if (location.host.indexOf('mail.google.com') !== -1) {{
+            function findGmailAttach() {{
+                var ed = document.querySelector('.Am.Al.editable, div[role="dialog"] div[role="textbox"][contenteditable="true"], div[aria-label*="Levél törzse"], div[aria-label*="Message Body"]');
+                var dialog = ed ? ed.closest('[role="dialog"], [role="region"], form, .M9, .AD') : document.querySelector('div[role="dialog"], .M9, .AD');
+                var fileInp = (dialog && dialog.querySelector('input[type="file"][name="Filedata"], input[type="file"][name="file"], input[type="file"]')) || document.querySelector('input[type="file"][name="Filedata"], input[type="file"][name="file"]');
+                return {{ ed: ed, dialog: dialog, fileInp: fileInp }};
+            }}
+
+            var g = findGmailAttach();
+            if (g.fileInp) {{
+                g.fileInp.files = dt.files;
+                g.fileInp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                return true;
+            }}
+
+            // Ha nincs nyitva compose ablak, automatikusan rákattintunk a Levélírás gombra
+            if (isDnD) {{
+                var composeBtn = document.querySelector('div[gh="cm"], div[role="button"][aria-label*="Levélírás"], div[role="button"][aria-label*="Compose"], .T-I.T-I-KE.L3');
+                if (composeBtn) {{
+                    composeBtn.click();
+                    var attempts = 0;
+                    var poll = setInterval(function() {{
+                        attempts++;
+                        var retryG = findGmailAttach();
+                        if (retryG.fileInp || attempts >= 20) {{
+                            clearInterval(poll);
+                            if (retryG.fileInp) {{
+                                retryG.fileInp.files = dt.files;
+                                retryG.fileInp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                        }}
+                    }}, 150);
+                    return true;
+                }}
+            }}
+        }}
+
+        // 2. TELEGRAM (web.telegram.org): A Telegram Web a csevegőmező paste eseményére reagál megbízhatóan
+        if (location.host.indexOf('telegram.org') !== -1) {{
+            var tgInput = document.querySelector('.input-message-input, [contenteditable="true"], #editable-message-text') || document.activeElement || document.body;
+            var pasteEvt = new ClipboardEvent('paste', {{
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: dt
+            }});
+            tgInput.dispatchEvent(pasteEvt);
+            return true;
+        }}
+
+        // 3. MESSENGER (messenger.com, facebook.com): Kizárólag a szerkesztőfelületre küldött drop esemény
+        // SOHA nem küldünk mellette window drop vagy paste eseményt, mert az duplikációt (2x csatolást) okoz!
+        if (location.host.indexOf('messenger.com') !== -1 || location.host.indexOf('facebook.com') !== -1) {{
+            var fbInput = isDnD ? document.elementFromPoint(dropX, dropY) : null;
+            if (fbInput) {{
+                fbInput = fbInput.closest('[contenteditable="true"], [role="textbox"]') || fbInput;
+            }}
+            if (!fbInput || fbInput === document.body) {{
+                fbInput = document.querySelector('div[role="textbox"][contenteditable="true"], [contenteditable="true"]') || document.activeElement || document.body;
+            }}
+
+            if (isDnD) {{
+                ['dragenter', 'dragover'].forEach(function(evName) {{
+                    fbInput.dispatchEvent(new DragEvent(evName, {{
+                        bubbles: true,
+                        cancelable: true,
+                        composed: true,
+                        dataTransfer: dt,
+                        clientX: clientX,
+                        clientY: clientY
+                    }}));
+                }});
+                fbInput.dispatchEvent(new DragEvent('drop', {{
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    dataTransfer: dt,
+                    clientX: clientX,
+                    clientY: clientY
+                }}));
+            }} else {{
+                fbInput.dispatchEvent(new ClipboardEvent('paste', {{
+                    bubbles: true,
+                    cancelable: true,
+                    composed: true,
+                    clipboardData: dt
+                }}));
+            }}
+            return true;
+        }}
+
+        // 4. ÁLTALÁNOS WEBOLDALAK (WhatsApp Web, Slack, egyedi oldalak)
+        function resolveGeneralTarget() {{
             var pt = isDnD ? document.elementFromPoint(dropX, dropY) : null;
             if (pt && pt.tagName === 'IFRAME') {{
                 try {{
@@ -1817,145 +1911,46 @@ class TabbedClientWindow(Gtk.Window):
                     }}
                 }} catch(e) {{}}
             }}
-
             if (pt) {{
-                var ed = pt.closest('[contenteditable="true"], [role="textbox"], .Am.Al.editable, textarea');
-                if (ed) return {{ editor: ed, container: ed.closest('[role="dialog"], [role="region"], form, .M9, .AD') }};
-                var box = pt.closest('[role="dialog"], [role="region"], form, .M9, .AD, .dw');
-                if (box) {{
-                    var edInBox = box.querySelector('.Am.Al.editable, [contenteditable="true"], [role="textbox"], textarea');
-                    return {{ editor: edInBox || box, container: box }};
-                }}
+                var ed = pt.closest('[contenteditable="true"], [role="textbox"], textarea');
+                if (ed) return ed;
             }}
-
-            // Gmail levélszerkesztő keresése
-            var gmailEd = document.querySelector('.Am.Al.editable, div[role="dialog"] div[role="textbox"][contenteditable="true"], div[aria-label*="Levél törzse"], div[aria-label*="Message Body"]');
-            if (gmailEd) {{
-                return {{ editor: gmailEd, container: gmailEd.closest('[role="dialog"], [role="region"], form, .M9, .AD') }};
-            }}
-
-            // Fókuszált aktív elem
             var activeEd = (document.activeElement && document.activeElement !== document.body && document.activeElement.matches('[contenteditable="true"], [role="textbox"], textarea')) ? document.activeElement : null;
-            if (activeEd) {{
-                return {{ editor: activeEd, container: activeEd.closest('[role="dialog"], [role="region"], form') }};
-            }}
-
-            // Bármilyen szerkesztőfelület a dokumentumban
+            if (activeEd) return activeEd;
             var generalEd = document.querySelector('[contenteditable="true"], [role="textbox"], textarea');
-            if (generalEd) {{
-                return {{ editor: generalEd, container: generalEd.closest('[role="dialog"], [role="region"], form') }};
-            }}
-
-            return {{ editor: pt || document.body, container: null }};
+            if (generalEd) return generalEd;
+            return pt || document.activeElement || document.body;
         }}
 
-        function executeAttachment(resolved) {{
-            var target = resolved.editor || document.body;
-            var container = resolved.container || (target ? target.closest('[role="dialog"], [role="region"], form, .M9, .AD') : null);
-
-            if (isDnD) {{
-                // 1. Csatolmány inputok kitöltése a konténerben (pl. Gmail Compose ablak input[type="file"])
-                var fileInp = null;
-                if (container) {{
-                    fileInp = container.querySelector('input[type="file"][name="Filedata"], input[type="file"][name="file"], input[type="file"]');
-                }}
-                if (!fileInp && location.host.indexOf('mail.google.com') !== -1) {{
-                    fileInp = document.querySelector('input[type="file"][name="Filedata"], input[type="file"][name="file"]');
-                }}
-
-                if (fileInp) {{
-                    try {{
-                        fileInp.files = dt.files;
-                        fileInp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    }} catch(e) {{}}
-                }}
-
-                // 2. HTML5 Drag & Drop eseménysorozat: dragenter -> dragover -> drop
-                ['dragenter', 'dragover'].forEach(function(evName) {{
-                    var ev = new DragEvent(evName, {{
-                        bubbles: true,
-                        cancelable: true,
-                        composed: true,
-                        dataTransfer: dt,
-                        clientX: clientX,
-                        clientY: clientY
-                    }});
-                    target.dispatchEvent(ev);
-                }});
-
-                var dropEvt = new DragEvent('drop', {{
+        var genTarget = resolveGeneralTarget();
+        if (isDnD) {{
+            ['dragenter', 'dragover'].forEach(function(evName) {{
+                genTarget.dispatchEvent(new DragEvent(evName, {{
                     bubbles: true,
                     cancelable: true,
                     composed: true,
                     dataTransfer: dt,
                     clientX: clientX,
                     clientY: clientY
-                }});
-                target.dispatchEvent(dropEvt);
-
-                // Globális drop értesítés a window felé
-                try {{
-                    var winDropEvt = new DragEvent('drop', {{
-                        bubbles: true,
-                        cancelable: true,
-                        composed: true,
-                        dataTransfer: dt,
-                        clientX: clientX,
-                        clientY: clientY
-                    }});
-                    window.dispatchEvent(winDropEvt);
-                }} catch(e) {{}}
-                // DnD esetén tilos paste eseményt küldeni, megelőzve a Messenger duplikációját!
-            }} else {{
-                // Vágólapos beillesztés (Ctrl+V) esetén ClipboardEvent('paste') kiváltása
-                var pasteEvt = new ClipboardEvent('paste', {{
-                    bubbles: true,
-                    cancelable: true,
-                    composed: true,
-                    clipboardData: dt
-                }});
-                target.dispatchEvent(pasteEvt);
-
-                // Fallback vágólap esetén: ha van form fájl-input
-                if (container) {{
-                    var fileInp = container.querySelector('input[type="file"][name="Filedata"], input[type="file"][name="file"], input[type="file"]');
-                    if (fileInp && (!fileInp.files || fileInp.files.length === 0)) {{
-                        try {{
-                            fileInp.files = dt.files;
-                            fileInp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        }} catch(e) {{}}
-                    }}
-                }}
-            }}
-            return true;
+                }}));
+            }});
+            genTarget.dispatchEvent(new DragEvent('drop', {{
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                dataTransfer: dt,
+                clientX: clientX,
+                clientY: clientY
+            }}));
+        }} else {{
+            genTarget.dispatchEvent(new ClipboardEvent('paste', {{
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                clipboardData: dt
+            }}));
         }}
-
-        // Gmail automatikus Levélírás kezelés, ha nincs nyitva szerkesztő
-        if (location.host.indexOf('mail.google.com') !== -1 && isDnD) {{
-            var initialTarget = resolveTarget();
-            var hasActiveEditor = initialTarget.editor && initialTarget.editor !== document.body && initialTarget.editor.matches && initialTarget.editor.matches('[contenteditable="true"], [role="textbox"], .Am.Al.editable');
-            if (!hasActiveEditor && !initialTarget.container) {{
-                var composeBtn = document.querySelector('div[gh="cm"], div[role="button"][aria-label*="Levélírás"], div[role="button"][aria-label*="Compose"], .T-I.T-I-KE.L3');
-                if (composeBtn) {{
-                    composeBtn.click();
-                    var attempts = 0;
-                    var poll = setInterval(function() {{
-                        attempts++;
-                        var retryTarget = resolveTarget();
-                        var ed = retryTarget.editor;
-                        var hasEd = ed && ed !== document.body && ed.matches && ed.matches('[contenteditable="true"], [role="textbox"], .Am.Al.editable');
-                        if (hasEd || retryTarget.container || attempts >= 20) {{
-                            clearInterval(poll);
-                            executeAttachment(retryTarget);
-                        }}
-                    }}, 150);
-                    return true;
-                }}
-            }}
-        }}
-
-        var targetResolved = resolveTarget();
-        return executeAttachment(targetResolved);
+        return true;
     }} catch(err) {{
         console.error('[TabbedClient File Injection Error]', err);
         return false;
