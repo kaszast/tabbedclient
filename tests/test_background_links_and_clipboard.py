@@ -123,6 +123,56 @@ class TestBackgroundLinksAndClipboard(unittest.TestCase):
             self.assertTrue(res)
             mock_media_req.allow.assert_called_once()
 
+    def test_drag_data_received_injects_dropped_file(self):
+        """Teszteli, hogy a fájlkezelőből behúzott fájl-URI-t a drag-data-received feldolgozza és injektálja."""
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tf:
+            tf.write(b"\xff\xd8\xff\xe0\x00\x10JFIFtestjpegdata")
+            tf_path = tf.name
+
+        try:
+            mock_wv = MagicMock()
+            mock_context = MagicMock()
+            mock_sel = MagicMock()
+            mock_sel.get_uris.return_value = [f"file://{tf_path}"]
+            mock_sel.get_text.return_value = None
+
+            with patch.object(self.app, "_inject_files_to_webview") as mock_inject:
+                with patch("desktop.tabbedclient.Gtk.drag_finish") as mock_finish:
+                    res = self.app._on_webview_drag_data_received(
+                        mock_wv, mock_context, 150, 200, mock_sel, 0, 1000, "tab-messenger"
+                    )
+                    self.assertTrue(res)
+                    mock_inject.assert_called_once()
+                    args = mock_inject.call_args[0]
+                    self.assertEqual(args[0], mock_wv)
+                    injected_files = args[1]
+                    self.assertEqual(len(injected_files), 1)
+                    self.assertEqual(injected_files[0]["filename"], os.path.basename(tf_path))
+                    self.assertEqual(injected_files[0]["type"], "image/jpeg")
+                    # Koordináták átadása
+                    self.assertEqual(mock_inject.call_args[1]["drop_coords"], (150, 200))
+                    mock_finish.assert_called_once_with(mock_context, True, False, 1000)
+        finally:
+            if os.path.exists(tf_path):
+                os.unlink(tf_path)
+
+    def test_decide_policy_ignores_file_uri_navigation(self):
+        """Teszteli, hogy ha bedobott fájl miatt file:// navigáció indulna egy weboldalon, a decide_policy elnyeli."""
+        mock_wv = MagicMock()
+        mock_decision = MagicMock()
+        mock_nav = MagicMock()
+        mock_nav.get_mouse_button.return_value = 0
+        mock_nav.get_modifiers.return_value = 0
+        mock_req = MagicMock()
+        mock_req.get_uri.return_value = "file:///home/maci/Letoltesek/kep.png"
+        mock_nav.get_request.return_value = mock_req
+        mock_decision.get_navigation_action.return_value = mock_nav
+
+        from gi.repository import WebKit2
+        res = self.app._on_decide_policy(mock_wv, mock_decision, WebKit2.PolicyDecisionType.NAVIGATION_ACTION, "tab-gmail")
+        self.assertTrue(res)
+        mock_decision.ignore.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

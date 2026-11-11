@@ -104,7 +104,7 @@ try:
 except Exception:
     pass
 
-APP_VERSION = "1.5"
+APP_VERSION = "1.6"
 INSTANCE_SOCKET_NAME = "tabbedclient.sock"
 
 
@@ -1620,6 +1620,12 @@ class TabbedClientWindow(Gtk.Window):
             if is_auth_or_login_url(real_target):
                 return False
 
+            # Ha külső fájl behúzásakor (DnD) a WebKit elindítana egy navigációt a helyi file:// URI-ra,
+            # azt el kell nyelni (ignore), megakadályozva, hogy a csevegő/levelező fül helyén a behúzott kép vagy fájl nyíljon meg!
+            if real_target.startswith("file://") and not tab_url.startswith("file://"):
+                decision.ignore()
+                return True
+
             # Ha a hivatkozás külső böngészőben nyitandó meg (pl. Messengeren Facebook esemény vagy külső link):
             # Akkor is megnyitjuk külső böngészőben, ha a weboldal belső JavaScriptje (pl. React SPA router)
             # vezérelte a kattintást (nav_type == OTHER), megakadályozva a csevegő felület felülírását!
@@ -1757,61 +1763,132 @@ class TabbedClientWindow(Gtk.Window):
 
         return None
 
-    def _inject_clipboard_file_to_webview(self, webview, file_info: dict):
-        """Szintetikus ClipboardEvent('paste') és DragEvent('drop') eseményeket vált ki a weboldalon a fájl csatolásához."""
-        data_b64 = file_info.get("data", "")
-        mime_type = file_info.get("type", "image/png")
-        filename = file_info.get("filename", "pasted_image.png")
+    def _inject_files_to_webview(self, webview, files: list[dict], drop_coords: tuple[int, int] | None = None):
+        """
+        Szintetikus DragEvent ('dragenter', 'dragover', 'drop') és fallback ClipboardEvent ('paste')
+        eseményeket vált ki a weboldalon a fájlok közvetlen csatolásához.
+        Támogatja a pontos (x, y) egérkoordinátákat és egyszerre több fájl átadását.
+        """
+        if not files:
+            return
+
+        files_json = json.dumps(files, ensure_ascii=False)
+        drop_x = drop_coords[0] if (drop_coords and len(drop_coords) >= 2) else "null"
+        drop_y = drop_coords[1] if (drop_coords and len(drop_coords) >= 2) else "null"
 
         js_code = f"""
 (function() {{
     try {{
-        var b64Data = "{data_b64}";
-        var mime = "{mime_type}";
-        var fname = "{filename}";
-
-        var binStr = atob(b64Data);
-        var len = binStr.length;
-        var bytes = new Uint8Array(len);
-        for (var i = 0; i < len; i++) {{
-            bytes[i] = binStr.charCodeAt(i);
-        }}
-        var blob = new Blob([bytes], {{ type: mime }});
-        var file = new File([blob], fname, {{ type: mime, lastModified: Date.now() }});
+        var rawFiles = {files_json};
+        if (!rawFiles || !rawFiles.length) return false;
 
         var dt = new DataTransfer();
-        dt.items.add(file);
+        rawFiles.forEach(function(item) {{
+            var b64Data = item.data || "";
+            var mime = item.type || "application/octet-stream";
+            var fname = item.filename || item.name || "file";
 
-        var active = document.activeElement || document.body;
-        if (active && active.tagName === 'IFRAME') {{
+            var binStr = atob(b64Data);
+            var len = binStr.length;
+            var bytes = new Uint8Array(len);
+            for (var i = 0; i < len; i++) {{
+                bytes[i] = binStr.charCodeAt(i);
+            }}
+            var blob = new Blob([bytes], {{ type: mime }});
+            var file = new File([blob], fname, {{ type: mime, lastModified: Date.now() }});
+            dt.items.add(file);
+        }});
+
+        var dropX = {drop_x};
+        var dropY = {drop_y};
+        var target = null;
+
+        if (typeof dropX === 'number' && typeof dropY === 'number') {{
+            target = document.elementFromPoint(dropX, dropY);
+        }}
+
+        if (!target) {{
+            target = document.activeElement || document.body;
+        }}
+
+        if (target && target.tagName === 'IFRAME') {{
             try {{
-                var doc = active.contentDocument || active.contentWindow.document;
-                if (doc && doc.activeElement) active = doc.activeElement;
+                var doc = target.contentDocument || target.contentWindow.document;
+                if (doc) {{
+                    if (typeof dropX === 'number' && typeof dropY === 'number') {{
+                        var rect = target.getBoundingClientRect();
+                        var innerTarget = doc.elementFromPoint(dropX - rect.left, dropY - rect.top);
+                        if (innerTarget) target = innerTarget;
+                    }} else if (doc.activeElement) {{
+                        target = doc.activeElement;
+                    }}
+                }}
             }} catch(e) {{}}
         }}
 
-        // 1. Szintetikus paste esemény (Messenger, Gmail, Slack, Telegram Web ezt preferálja)
-        var pasteEvt = new ClipboardEvent('paste', {{
+        if (!target) target = document.body;
+
+        var clientX = (typeof dropX === 'number') ? dropX : 0;
+        var clientY = (typeof dropY === 'number') ? dropY : 0;
+
+        // 1. Drag & Drop szekvencia kiváltása a HTML5 specifikáció szerint: dragenter -> dragover -> drop
+        var enterEvt = new DragEvent('dragenter', {{
             bubbles: true,
             cancelable: true,
             composed: true,
-            clipboardData: dt
+            dataTransfer: dt,
+            clientX: clientX,
+            clientY: clientY
         }});
-        active.dispatchEvent(pasteEvt);
+        target.dispatchEvent(enterEvt);
 
-        // 2. Ha a webapp drop eseményre támaszkodik vagy nem preventDefault-ozta
-        if (!pasteEvt.defaultPrevented) {{
-            var dropEvt = new DragEvent('drop', {{
+        var overEvt = new DragEvent('dragover', {{
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            dataTransfer: dt,
+            clientX: clientX,
+            clientY: clientY
+        }});
+        target.dispatchEvent(overEvt);
+
+        var dropEvt = new DragEvent('drop', {{
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            dataTransfer: dt,
+            clientX: clientX,
+            clientY: clientY
+        }});
+        var dropConsumed = !target.dispatchEvent(dropEvt);
+
+        // 2. Ha a webapp nem drop eseményre, hanem paste-re reagál (pl. FB Messenger üzenetmező)
+        if (!dropConsumed) {{
+            var pasteEvt = new ClipboardEvent('paste', {{
                 bubbles: true,
                 cancelable: true,
                 composed: true,
-                dataTransfer: dt
+                clipboardData: dt
             }});
-            active.dispatchEvent(dropEvt);
+            target.dispatchEvent(pasteEvt);
         }}
+
+        // 3. Rejtett fájl feltöltő inputok (input[type="file"]) kitöltése fallbackként
+        if (!dropConsumed) {{
+            var fileInputs = document.querySelectorAll('input[type="file"]');
+            for (var i = 0; i < fileInputs.length; i++) {{
+                var inp = fileInputs[i];
+                try {{
+                    inp.files = dt.files;
+                    inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    break;
+                }} catch(e) {{}}
+            }}
+        }}
+
         return true;
     }} catch(err) {{
-        console.error('[TabbedClient Paste Injection Error]', err);
+        console.error('[TabbedClient File Injection Error]', err);
         return false;
     }}
 }})();
@@ -1819,7 +1896,97 @@ class TabbedClientWindow(Gtk.Window):
         try:
             webview.run_javascript(js_code, None, None, None)
         except Exception as err:
-            print(f"[WebView Paste Injection Warning] {err}", file=sys.stderr)
+            print(f"[WebView File Injection Warning] {err}", file=sys.stderr)
+
+    def _inject_clipboard_file_to_webview(self, webview, file_info: dict):
+        """Szintetikus ClipboardEvent('paste') és DragEvent('drop') eseményeket vált ki a weboldalon a fájl csatolásához."""
+        self._inject_files_to_webview(webview, [file_info], drop_coords=None)
+
+    def _on_webview_drag_motion(self, widget, context, x, y, time):
+        """Jelzi a forrásnak (fájlkezelő, böngésző), hogy a WebView elfogadja a fájlok bedobását."""
+        Gdk.drag_status(context, Gdk.DragAction.COPY, time)
+        return True
+
+    def _on_webview_drag_drop(self, widget, context, x, y, time):
+        """Kiválasztja a megfelelő drag-targetet és lekéri a fájladatokat."""
+        target = widget.drag_dest_find_target(context, None)
+        if target:
+            widget.drag_get_data(context, target, time)
+            return True
+        return False
+
+    def _on_webview_drag_data_received(self, widget, context, x, y, selection_data, info, time, tab_id: str):
+        """Feldolgozza a behúzott fájlokat vagy képeket, és közvetlenül a weboldal DOM-jába injektálja."""
+        try:
+            files_to_inject = []
+
+            # 1. URI lista kinyerése (fájlkezelőkből - Nautilus, Nemo, Thunar stb. - behúzott fájlok)
+            uris = selection_data.get_uris() if hasattr(selection_data, "get_uris") else []
+            if not uris and hasattr(selection_data, "get_text"):
+                raw_text = selection_data.get_text() or ""
+                if "file://" in raw_text or os.path.isabs(raw_text.strip()):
+                    uris = [l.strip() for l in raw_text.splitlines() if l.strip() and not l.strip().startswith("#")]
+
+            if uris:
+                for uri in uris:
+                    filepath = None
+                    try:
+                        filepath, _ = GLib.filename_from_uri(uri)
+                    except Exception:
+                        if uri.startswith("file://"):
+                            filepath = urllib.parse.unquote(uri[7:])
+                        elif os.path.isabs(uri):
+                            filepath = uri
+
+                    if filepath and os.path.isfile(filepath):
+                        try:
+                            fname = os.path.basename(filepath)
+                            mime_type, _ = mimetypes.guess_type(filepath)
+                            if not mime_type:
+                                ext = os.path.splitext(filepath)[1].lower()
+                                if ext in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'):
+                                    mime_type = f"image/{ext.replace('.', '')}"
+                                elif ext in ('.pdf',):
+                                    mime_type = "application/pdf"
+                                else:
+                                    mime_type = "application/octet-stream"
+
+                            with open(filepath, "rb") as f:
+                                file_bytes = f.read()
+
+                            if file_bytes:
+                                files_to_inject.append({
+                                    "filename": fname,
+                                    "type": mime_type,
+                                    "data": base64.b64encode(file_bytes).decode("ascii")
+                                })
+                        except Exception as read_err:
+                            print(f"[Drag File Read Warning] {read_err}", file=sys.stderr)
+
+            # 2. Pixbuf kinyerése (ha képet húztak át közvetlenül böngészőből vagy képszerkesztőből)
+            if not files_to_inject and hasattr(selection_data, "get_pixbuf"):
+                pixbuf = selection_data.get_pixbuf()
+                if pixbuf:
+                    try:
+                        ok, buffer = pixbuf.save_to_bufferv("png", [], [])
+                        if ok and buffer:
+                            files_to_inject.append({
+                                "filename": "dropped_image.png",
+                                "type": "image/png",
+                                "data": base64.b64encode(buffer).decode("ascii")
+                            })
+                    except Exception as pb_err:
+                        print(f"[Drag Pixbuf Warning] {pb_err}", file=sys.stderr)
+
+            if files_to_inject:
+                self._inject_files_to_webview(widget, files_to_inject, drop_coords=(x, y))
+                Gtk.drag_finish(context, True, False, time)
+                return True
+        except Exception as e:
+            print(f"[Drag Data Received Error] {e}", file=sys.stderr)
+
+        Gtk.drag_finish(context, False, False, time)
+        return False
 
     def _on_webview_key_press(self, webview, event, tab_id: str):
         is_ctrl_v = bool(event.state & Gdk.ModifierType.CONTROL_MASK) and event.keyval in (Gdk.KEY_v, Gdk.KEY_V)
@@ -1977,6 +2144,25 @@ class TabbedClientWindow(Gtk.Window):
         )
         wv.connect("scroll-event", self._on_webview_scroll)
         wv.connect("key-press-event", self._on_webview_key_press, tab_id)
+
+        # Drag & Drop célpontok beállítása (külső fájlok, képek, URI-k behúzása fájlkezelőből)
+        dnd_targets = [
+            Gtk.TargetEntry.new("text/uri-list", 0, 0),
+            Gtk.TargetEntry.new("text/plain", 0, 1),
+            Gtk.TargetEntry.new("UTF8_STRING", 0, 2),
+            Gtk.TargetEntry.new("image/png", 0, 3),
+            Gtk.TargetEntry.new("image/jpeg", 0, 4),
+            Gtk.TargetEntry.new("application/x-moz-file", 0, 5),
+        ]
+        wv.drag_dest_set(Gtk.DestDefaults.ALL, dnd_targets, Gdk.DragAction.COPY | Gdk.DragAction.MOVE)
+        wv.drag_dest_add_uri_targets()
+        wv.drag_dest_add_image_targets()
+        wv.drag_dest_add_text_targets()
+
+        wv.connect("drag-motion", self._on_webview_drag_motion)
+        wv.connect("drag-drop", self._on_webview_drag_drop)
+        wv.connect("drag-data-received", self._on_webview_drag_data_received, tab_id)
+
         saved_zoom = float(tab.get("zoomLevel", 1.0))
         if saved_zoom < 0.25 or saved_zoom > 5.0:
             saved_zoom = 1.0
@@ -2047,11 +2233,24 @@ class TabbedClientWindow(Gtk.Window):
                 "      }"
                 "    }"
                 "  }, true);"
-                "  document.addEventListener('dragover', function(e) {"
+                "  ['dragenter', 'dragover'].forEach(function(evtName) {"
+                "    document.addEventListener(evtName, function(e) {"
+                "      if (e.dataTransfer) {"
+                "        var types = e.dataTransfer.types;"
+                "        if (types && (types.includes('Files') || types.includes('text/uri-list') || types.includes('application/x-moz-file'))) {"
+                "          e.preventDefault();"
+                "          e.dataTransfer.dropEffect = 'copy';"
+                "        }"
+                "      }"
+                "    }, false);"
+                "  });"
+                "  document.addEventListener('drop', function(e) {"
                 "    if (e.dataTransfer) {"
                 "      var types = e.dataTransfer.types;"
                 "      if (types && (types.includes('Files') || types.includes('text/uri-list') || types.includes('application/x-moz-file'))) {"
-                "        e.dataTransfer.dropEffect = 'copy';"
+                "        if (!e.defaultPrevented) {"
+                "          e.preventDefault();"
+                "        }"
                 "      }"
                 "    }"
                 "  }, false);"
