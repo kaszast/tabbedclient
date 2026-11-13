@@ -69,3 +69,7 @@
   - [x] Messenger: kizárólag a chat szerkesztő kap `drop` eseményt (`window.dispatchEvent` elhagyása a 2x csatolás megszüntetésére)
   - [x] Telegram: csevegőmező (`.input-message-input`) `paste` eseményének visszaállítása
   - [x] Verziószám léptetése 1.8-ra, tesztek (`npm test` 8/8 zöld), csomagok újraépítése (`tabbedclient_1.8_all.deb`)
+- [x] Gmail pop-up blokkoló figyelmeztetés és `window.open()` kezelés javítása (v1.9):
+  - [x] `set_javascript_can_open_windows_automatically(True)` bekapcsolása a WebView beállításokban
+  - [x] `_on_create_webview` átalakítása: `None` helyett `new_with_related_view` alapú rejtett elnyelő (külső linkeknél) és `ready-to-show` tranziens ablak (belső / `about:blank` pop-upoknál)
+  - [x] Verziószám léptetése 1.9-re, új pop-up egységtesztek (`npm test` 8/8 zöld), csomagok újraépítése (`tabbedclient_1.9_all.deb`)

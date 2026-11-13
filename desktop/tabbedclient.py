@@ -104,7 +104,7 @@ try:
 except Exception:
     pass
 
-APP_VERSION = "1.8"
+APP_VERSION = "1.9"
 INSTANCE_SOCKET_NAME = "tabbedclient.sock"
 
 
@@ -1453,90 +1453,235 @@ class TabbedClientWindow(Gtk.Window):
                 return True
         return False
 
+    def _new_related_webview(self, parent_webview):
+        """Létrehoz egy a szülő WebView-val közös WebProcess/munkamenetű WebView példányt."""
+        if hasattr(WebKit2.WebView, "new_with_related_view"):
+            popup_wv = WebKit2.WebView.new_with_related_view(parent_webview)
+        else:
+            popup_wv = WebKit2.WebView.new_with_context(parent_webview.get_context())
+        try:
+            parent_settings = parent_webview.get_settings() if hasattr(parent_webview, "get_settings") else None
+            if parent_settings and hasattr(popup_wv, "set_settings"):
+                popup_wv.set_settings(parent_settings)
+        except Exception:
+            pass
+        return popup_wv
+
+    def _create_popup_absorber(self, parent_webview, delay_ms: int = 1500):
+        """Rejtett, élő kapcsolt WebView-t ad vissza, hogy JS oldalon a window.open() ne null-t kapjon."""
+        try:
+            absorber = self._new_related_webview(parent_webview)
+            destroyed = {"done": False, "timer": None}
+
+            def _cleanup(*_args):
+                if destroyed["done"]:
+                    return False
+                destroyed["done"] = True
+                if destroyed["timer"]:
+                    try:
+                        GLib.source_remove(destroyed["timer"])
+                    except Exception:
+                        pass
+                    destroyed["timer"] = None
+                try:
+                    absorber.destroy()
+                except Exception:
+                    pass
+                return False
+
+            def _ignore_nav(_v, decision, decision_type):
+                if decision_type == WebKit2.PolicyDecisionType.RESPONSE:
+                    if hasattr(decision, "is_mime_type_supported") and not decision.is_mime_type_supported():
+                        if hasattr(decision, "download"):
+                            decision.download()
+                        return True
+                    resp = decision.get_response() if hasattr(decision, "get_response") else None
+                    if resp and hasattr(resp, "get_suggested_filename") and resp.get_suggested_filename():
+                        if hasattr(decision, "download"):
+                            decision.download()
+                        return True
+                elif decision_type in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+                    na = decision.get_navigation_action() if hasattr(decision, "get_navigation_action") else None
+                    r = na.get_request() if na else None
+                    u = r.get_uri() if r else None
+                    if not u or u.startswith("about:") or u.startswith("javascript:"):
+                        return False
+                    if u.startswith("blob:") and hasattr(decision, "download"):
+                        decision.download()
+                        return True
+                if hasattr(decision, "ignore"):
+                    decision.ignore()
+                return True
+
+            absorber.connect("decide-policy", _ignore_nav)
+            absorber.connect("close", _cleanup)
+            destroyed["timer"] = GLib.timeout_add(delay_ms, _cleanup)
+            return absorber
+        except Exception as err:
+            print(f"[Popup Absorber Warning] {err}", file=sys.stderr)
+            return None
+
     def _on_create_webview(self, webview, navigation_action, tab_id: str):
-        """Kezeli a target='_blank' vagy window.open() hívásokat."""
+        """Kezeli a target='_blank' vagy window.open() hívásokat anélkül, hogy null-t adna vissza a JS-nek."""
         req = navigation_action.get_request() if navigation_action else None
         uri = req.get_uri() if req else None
 
         modifiers = navigation_action.get_modifiers() if navigation_action else 0
         ctrl_pressed = bool(modifiers & Gdk.ModifierType.CONTROL_MASK)
         mouse_btn = navigation_action.get_mouse_button() if navigation_action else 0
-        is_gesture = navigation_action.is_user_gesture() if navigation_action else False
 
         tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
         tab_url = tab.get("url", "") if tab else (webview.get_uri() or "")
 
+        # Ha már a híváskor ismert, hogy külső böngészőben kell nyitni -> külső nyitás + élő rejtett WebView visszaadása
         if uri and not uri.startswith("about:") and not uri.startswith("javascript:"):
             real_url = extract_real_target_url(uri)
-            if real_url.startswith("blob:"):
-                return None
-            if ctrl_pressed or mouse_btn == 2:
-                self.open_external_uri(real_url, in_background=True)
-                return None
-            if is_auth_or_login_url(real_url):
-                webview.load_uri(real_url)
-                return None
-            if is_external_link(tab_url, real_url):
-                self.open_external_uri(real_url)
-                return None
-            else:
-                webview.load_uri(real_url)
-                return None
+            if not real_url.startswith("blob:"):
+                if ctrl_pressed or mouse_btn == 2:
+                    self.open_external_uri(real_url, in_background=True)
+                    return self._create_popup_absorber(webview)
+                if is_external_link(tab_url, real_url):
+                    self.open_external_uri(real_url)
+                    return self._create_popup_absorber(webview)
 
-        # Ha nem felhasználói gesztus indította és nincs konkrét URI
-        if not is_gesture:
-            return None
-
-        # Ha az URI a létrehozás pillanatában még nem ismert, de van felhasználói gesztus
+        # Belső popup (pl. Gmail új ablakos levélírás / nyomtatás / OAuth) vagy késleltetett JS navigáció (about:blank)
         try:
-            temp_wv = WebKit2.WebView.new_with_context(webview.get_context())
+            popup_wv = self._new_related_webview(webview)
+            state = {
+                "absorbed": False,
+                "closed": False,
+                "popup_win": None,
+                "show_timer": None,
+                "cleanup_timer": None,
+            }
 
-            def _on_temp_decide_policy(temp_view, decision, decision_type):
+            def _destroy_popup(*_args):
+                if state["closed"]:
+                    return False
+                state["closed"] = True
+                for key in ("show_timer", "cleanup_timer"):
+                    if state[key]:
+                        try:
+                            GLib.source_remove(state[key])
+                        except Exception:
+                            pass
+                        state[key] = None
+                try:
+                    if state["popup_win"] is not None:
+                        state["popup_win"].destroy()
+                    else:
+                        popup_wv.destroy()
+                except Exception:
+                    pass
+                return False
+
+            def _present_popup_window():
+                state["show_timer"] = None
+                if state["closed"] or state["absorbed"] or state["popup_win"] is not None:
+                    return False
+                try:
+                    if state["cleanup_timer"]:
+                        GLib.source_remove(state["cleanup_timer"])
+                        state["cleanup_timer"] = None
+
+                    win = Gtk.Window()
+                    win.set_transient_for(self)
+                    win.set_title(popup_wv.get_title() or "TabbedClient")
+                    if hasattr(win, "set_wmclass"):
+                        try:
+                            win.set_wmclass("tabbedclient", "tabbedclient")
+                        except Exception:
+                            pass
+
+                    width, height = 960, 720
+                    try:
+                        props = popup_wv.get_window_properties()
+                        geom = props.get_geometry() if props else None
+                        if geom and geom.width >= 300 and geom.height >= 200:
+                            width, height = geom.width, geom.height
+                    except Exception:
+                        pass
+                    win.set_default_size(width, height)
+
+                    popup_wv.connect("notify::title", lambda w, _p: win.set_title(w.get_title() or "TabbedClient"))
+                    win.connect("delete-event", lambda *_a: (_destroy_popup(), True)[1])
+                    win.add(popup_wv)
+                    state["popup_win"] = win
+                    win.show_all()
+                except Exception as err:
+                    print(f"[Popup Window Show Warning] {err}", file=sys.stderr)
+                    _destroy_popup()
+                return False
+
+            def _on_popup_decide_policy(temp_view, decision, decision_type):
                 if decision_type == WebKit2.PolicyDecisionType.RESPONSE:
                     if hasattr(decision, "is_mime_type_supported") and not decision.is_mime_type_supported():
                         if hasattr(decision, "download"):
                             decision.download()
-                        GLib.idle_add(temp_view.destroy)
+                        state["absorbed"] = True
+                        state["cleanup_timer"] = GLib.timeout_add(2000, _destroy_popup)
                         return True
                     resp = decision.get_response() if hasattr(decision, "get_response") else None
                     if resp and hasattr(resp, "get_suggested_filename") and resp.get_suggested_filename():
                         if hasattr(decision, "download"):
                             decision.download()
-                        GLib.idle_add(temp_view.destroy)
+                        state["absorbed"] = True
+                        state["cleanup_timer"] = GLib.timeout_add(2000, _destroy_popup)
                         return True
+                    return False
 
-                if decision_type == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+                if decision_type in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
                     na = decision.get_navigation_action()
                     r = na.get_request() if na else None
                     u = r.get_uri() if r else None
                     temp_mods = na.get_modifiers() if na else 0
                     temp_ctrl = bool(temp_mods & Gdk.ModifierType.CONTROL_MASK) or ctrl_pressed
                     temp_mouse = na.get_mouse_button() if na else mouse_btn
-                    if u and not u.startswith("about:") and not u.startswith("javascript:"):
-                        real_u = extract_real_target_url(u)
-                        if real_u.startswith("blob:"):
-                            if hasattr(decision, "download"):
-                                decision.download()
-                            GLib.idle_add(temp_view.destroy)
-                            return True
-                        elif temp_ctrl or temp_mouse == 2:
-                            self.open_external_uri(real_u, in_background=True)
-                        elif is_auth_or_login_url(real_u):
-                            webview.load_uri(real_u)
-                        else:
-                            curr_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
-                            curr_tab_url = curr_tab.get("url", "") if curr_tab else (webview.get_uri() or "")
-                            if is_external_link(curr_tab_url, real_u):
-                                self.open_external_uri(real_u)
-                            else:
-                                webview.load_uri(real_u)
-                decision.ignore()
-                GLib.idle_add(temp_view.destroy)
-                return True
+                    if not u or u.startswith("about:") or u.startswith("javascript:"):
+                        return False
 
-            temp_wv.connect("decide-policy", _on_temp_decide_policy)
-            GLib.timeout_add(10000, temp_wv.destroy)
-            return temp_wv
+                    real_u = extract_real_target_url(u)
+                    if real_u.startswith("blob:"):
+                        if hasattr(decision, "download"):
+                            decision.download()
+                        state["absorbed"] = True
+                        state["cleanup_timer"] = GLib.timeout_add(2000, _destroy_popup)
+                        return True
+
+                    curr_tab = next((t for t in self.config.get("tabs", []) if t.get("id") == tab_id), None)
+                    curr_tab_url = curr_tab.get("url", "") if curr_tab else (webview.get_uri() or "")
+
+                    if temp_ctrl or temp_mouse == 2:
+                        self.open_external_uri(real_u, in_background=True)
+                        state["absorbed"] = True
+                        decision.ignore()
+                        state["cleanup_timer"] = GLib.timeout_add(1500, _destroy_popup)
+                        return True
+
+                    if is_external_link(curr_tab_url, real_u):
+                        self.open_external_uri(real_u)
+                        state["absorbed"] = True
+                        decision.ignore()
+                        state["cleanup_timer"] = GLib.timeout_add(1500, _destroy_popup)
+                        return True
+
+                    # Belső vagy OAuth popup maradjon a popup_wv-ben
+                    return False
+                return False
+
+            def _on_ready_to_show(_v):
+                if state["absorbed"] or state["closed"] or state["show_timer"] or state["popup_win"] is not None:
+                    return
+                # Rövid késleltetés, hogy egy azonnali külső redirect esetén ne villanjon fel ablak
+                state["show_timer"] = GLib.timeout_add(120, _present_popup_window)
+
+            popup_wv.connect("decide-policy", _on_popup_decide_policy)
+            popup_wv.connect("permission-request", lambda w, r: self._on_permission_request(w, r, tab_id))
+            popup_wv.connect("create", lambda w, a: self._on_create_webview(w, a, tab_id))
+            popup_wv.connect("ready-to-show", _on_ready_to_show)
+            popup_wv.connect("close", _destroy_popup)
+            state["cleanup_timer"] = GLib.timeout_add(15000, lambda: _destroy_popup() if state["popup_win"] is None else False)
+            return popup_wv
         except Exception as err:
             print(f"[Create WebView Warning] {err}", file=sys.stderr)
             return None
@@ -1579,11 +1724,10 @@ class TabbedClientWindow(Gtk.Window):
                     self.open_external_uri(real_url, in_background=True)
                 elif is_auth_or_login_url(real_url):
                     webview.load_uri(real_url)
+                elif is_external_link(tab_url, real_url):
+                    self.open_external_uri(real_url)
                 elif is_gesture:
-                    if is_external_link(tab_url, real_url):
-                        self.open_external_uri(real_url)
-                    else:
-                        webview.load_uri(real_url)
+                    webview.load_uri(real_url)
             decision.ignore()
             return True
 
@@ -2168,6 +2312,8 @@ class TabbedClientWindow(Gtk.Window):
             wv_settings.set_media_playback_requires_user_gesture(False)
         wv_settings.set_enable_smooth_scrolling(True)
         wv_settings.set_javascript_can_access_clipboard(True)
+        if hasattr(wv_settings, "set_javascript_can_open_windows_automatically"):
+            wv_settings.set_javascript_can_open_windows_automatically(True)
         wv_settings.set_allow_file_access_from_file_urls(True)
         wv_settings.set_allow_universal_access_from_file_urls(True)
         if hasattr(wv_settings, "set_allow_top_navigation_to_data_urls"):

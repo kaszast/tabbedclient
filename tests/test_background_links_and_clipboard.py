@@ -200,6 +200,76 @@ class TestBackgroundLinksAndClipboard(unittest.TestCase):
         # Duplikációmentesség: nincs window drop hívás
         self.assertNotIn("window.dispatchEvent(winDropEvt)", js_code)
 
+    def test_create_webview_external_returns_absorber_not_none(self):
+        """Teszteli, hogy külső link window.open() esetén nem None tér vissza (elkerülve a Gmail pop-up figyelmeztetését)."""
+        mock_parent_wv = MagicMock()
+        mock_absorber = MagicMock()
+        mock_nav = MagicMock()
+        mock_req = MagicMock()
+        mock_req.get_uri.return_value = "https://pepita.hu/ugyfelszolgalat"
+        mock_nav.get_request.return_value = mock_req
+        mock_nav.get_modifiers.return_value = 0
+        mock_nav.get_mouse_button.return_value = 0
+        mock_nav.is_user_gesture.return_value = False
+
+        with patch.object(self.app, "_new_related_webview", return_value=mock_absorber):
+            with patch.object(self.app, "open_external_uri") as mock_open:
+                with patch("desktop.tabbedclient.GLib.timeout_add", return_value=1):
+                    res = self.app._on_create_webview(mock_parent_wv, mock_nav, "tab-gmail")
+                    mock_open.assert_called_once_with("https://pepita.hu/ugyfelszolgalat")
+                    self.assertIs(res, mock_absorber)
+
+    def test_create_webview_blank_popup_supports_async_external_redirect(self):
+        """Teszteli, hogy about:blank / belső popup gesztus nélkül is élő WebView-t ad vissza, és a későbbi külső átirányítást megnyitja."""
+        from gi.repository import WebKit2
+
+        mock_parent_wv = MagicMock()
+        mock_popup = MagicMock()
+        connected = {}
+        mock_popup.connect.side_effect = lambda sig, cb: connected.setdefault(sig, cb)
+
+        mock_nav = MagicMock()
+        mock_req = MagicMock()
+        mock_req.get_uri.return_value = "about:blank"
+        mock_nav.get_request.return_value = mock_req
+        mock_nav.get_modifiers.return_value = 0
+        mock_nav.get_mouse_button.return_value = 0
+        mock_nav.is_user_gesture.return_value = False
+
+        with patch.object(self.app, "_new_related_webview", return_value=mock_popup):
+            with patch("desktop.tabbedclient.GLib.timeout_add", return_value=1):
+                res = self.app._on_create_webview(mock_parent_wv, mock_nav, "tab-gmail")
+                self.assertIs(res, mock_popup)
+                self.assertIn("decide-policy", connected)
+                self.assertIn("ready-to-show", connected)
+                self.assertIn("close", connected)
+
+                # Későbbi átirányítás külső URL-re a popup WebView-ban
+                mock_decision = MagicMock()
+                mock_inner_nav = MagicMock()
+                mock_inner_req = MagicMock()
+                mock_inner_req.get_uri.return_value = "https://pepita.hu/szamla"
+                mock_inner_nav.get_request.return_value = mock_inner_req
+                mock_inner_nav.get_modifiers.return_value = 0
+                mock_inner_nav.get_mouse_button.return_value = 0
+                mock_decision.get_navigation_action.return_value = mock_inner_nav
+
+                with patch.object(self.app, "open_external_uri") as mock_open:
+                    with patch("desktop.tabbedclient.GLib.timeout_add", return_value=2):
+                        handled = connected["decide-policy"](
+                            mock_popup, mock_decision, WebKit2.PolicyDecisionType.NAVIGATION_ACTION
+                        )
+                        self.assertTrue(handled)
+                        mock_open.assert_called_once_with("https://pepita.hu/szamla")
+                        mock_decision.ignore.assert_called_once()
+
+    def test_webview_enables_js_can_open_windows_automatically(self):
+        """Ellenőrzi, hogy a WebView beállítása engedélyezi a JS-alapú ablaknyitást az async Gmail műveletekhez."""
+        import inspect
+        import desktop.tabbedclient as tc
+        src = inspect.getsource(tc.TabbedClientWindow._ensure_tab_webview)
+        self.assertIn("set_javascript_can_open_windows_automatically(True)", src)
+
 
 if __name__ == "__main__":
     unittest.main()
